@@ -1,0 +1,108 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0f1117;
+  --foreground: #e8eaf0;
+  --card: #1a1d27;
+  --card-border: #2a2d3a;
+  --accent: #6366f1;
+  --accent-hover: #4f52d1;
+  --muted: #6b7280;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.badge-high { background: rgba(16,185,129,0.15); color: #10b981; }
+.badge-medium { background: rgba(245,158,11,0.15); color: #f59e0b; }
+.badge-low { background: rgba(107,114,128,0.15); color: #9ca3af; }
+.badge-new { background: rgba(99,102,241,0.15); color: #818cf8; }
+.badge-ready { background: rgba(16,185,129,0.2); color: #34d399; }
+.badge-no { background: rgba(107,114,128,0.1); color: #6b7280; }
+
+input, select, textarea {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  color: var(--foreground);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  outline: none;
+}
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent);
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 7px 14px;
+  transition: all 0.15s ease;
+}
+.btn-primary {
+  background: var(--accent);
+  color: white;
+}
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-secondary {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  color: var(--foreground);
+}
+.btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+.btn-ghost {
+  background: transparent;
+  color: var(--muted);
+  padding: 4px 8px;
+}
+.btn-ghost:hover { color: var(--foreground); background: rgba(255,255,255,0.05); }
+
+table { width: 100%; border-collapse: collapse; }
+th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--card-border);
+  white-space: nowrap;
+}
+td {
+  padding: 10px 12px;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(42,45,58,0.5);
+  vertical-align: middle;
+}
+tr:hover td { background: rgba(255,255,255,0.02); }
+tr:last-child td { border-bottom: none; }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--card-border); border-radius: 3px; }
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+}
