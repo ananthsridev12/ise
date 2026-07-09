@@ -15,14 +15,23 @@ class NewsFetcher {
         $cl = strtolower($country);
         $cc = isset($countryMap[$cl]) ? $countryMap[$cl] : 'us';
 
-        // Use 'company' param so we only get jobs posted BY this company, not jobs mentioning it
-        $company = urlencode($companyName);
-        $url = 'https://api.adzuna.com/v1/api/jobs/' . $cc . '/search/1'
-             . '?app_id=' . ADZUNA_APP_ID
-             . '&app_key=' . ADZUNA_APP_KEY
-             . '&company=' . $company
-             . '&results_per_page=20'
-             . '&content-type=application/json';
+        // Try exact company filter first
+        $results = self::adzunaRequest($cc, ['company' => $companyName, 'results_per_page' => 20]);
+
+        // Fall back to keyword search if company filter returns nothing
+        if (empty($results)) {
+            $results = self::adzunaRequest($cc, ['what' => '"' . $companyName . '"', 'results_per_page' => 20]);
+        }
+
+        return $results;
+    }
+
+    private static function adzunaRequest($cc, $params) {
+        $qs = 'app_id=' . ADZUNA_APP_ID . '&app_key=' . ADZUNA_APP_KEY . '&content-type=application/json';
+        foreach ($params as $k => $v) {
+            $qs .= '&' . $k . '=' . urlencode($v);
+        }
+        $url = 'https://api.adzuna.com/v1/api/jobs/' . $cc . '/search/1?' . $qs;
 
         $ctx = stream_context_create(['http' => [
             'timeout'    => 15,

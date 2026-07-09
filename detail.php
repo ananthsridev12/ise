@@ -14,7 +14,7 @@ $email   = DB::fetchOne('SELECT * FROM email_drafts WHERE company_id = ? ORDER B
 
 $priority  = strtolower($company['priority'] ?? 'low');
 $newsSigs  = array_values(array_filter($signals, function($s) { return $s['source'] === 'GoogleNews'; }));
-$jobSigs   = array_values(array_filter($signals, function($s) { return $s['source'] === 'Indeed'; }));
+$jobSigs   = array_values(array_filter($signals, function($s) { return $s['source'] !== 'GoogleNews'; }));
 
 $techByCategory = [];
 foreach ($tech as $t) {
@@ -94,7 +94,7 @@ include 'layout.php';
     <!-- Manual paste box -->
     <div id="pasteBox" style="display:none;padding:16px 20px;border-bottom:1px solid var(--border);background:rgba(0,0,0,0.2)">
       <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
-        Indeed/LinkedIn is blocking automated fetch. Copy a job description from their site and paste it here — we'll extract the tools automatically.
+        Paste a job description from Indeed or LinkedIn &mdash; we'll extract the tools automatically.
       </div>
       <div class="form-group">
         <label>Job Title (optional)</label>
@@ -139,7 +139,7 @@ include 'layout.php';
       <?php else: ?>
         <div style="color:var(--muted);font-size:13px;line-height:1.8">
           No tools detected yet.<br>
-          <strong style="color:var(--text)">Try this:</strong> Go to Indeed, search for this company's jobs, copy a job description, and click <em>"+ Paste Job Description"</em> above.
+          <strong style="color:var(--text)">Try this:</strong> Click <em>"Re-Enrich"</em> to fetch Adzuna jobs, or paste a job description manually using the button above.
         </div>
       <?php endif; ?>
     </div>
@@ -147,13 +147,16 @@ include 'layout.php';
 
   <!-- Job Postings -->
   <div class="card">
-    <div style="padding:16px 20px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600">&#128188; Job Postings <span style="color:var(--muted);font-weight:400">(<?= count($jobSigs) ?> auto-fetched)</span></div>
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600">&#128188; Job Postings <span style="color:var(--muted);font-weight:400">(<?= count($jobSigs) ?> fetched)</span></div>
     <?php if ($jobSigs): ?>
     <div>
       <?php foreach ($jobSigs as $sig): ?>
       <div style="padding:12px 20px;border-bottom:1px solid rgba(42,45,58,0.4)">
-        <a href="<?= htmlspecialchars($sig['url']) ?>" target="_blank" style="color:var(--text);font-size:13px;font-weight:500;text-decoration:none"><?= htmlspecialchars($sig['title']) ?></a>
-        <div style="color:var(--muted);font-size:11px;margin-top:3px"><?= htmlspecialchars($sig['published_date']) ?></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">
+          <a href="<?= htmlspecialchars($sig['url']) ?>" target="_blank" style="color:var(--text);font-size:13px;font-weight:500;text-decoration:none"><?= htmlspecialchars($sig['title']) ?></a>
+          <span style="font-size:10px;color:var(--muted);background:rgba(255,255,255,0.05);padding:1px 6px;border-radius:4px"><?= htmlspecialchars($sig['source']) ?></span>
+        </div>
+        <div style="color:var(--muted);font-size:11px"><?= htmlspecialchars($sig['published_date']) ?></div>
         <?php if ($sig['snippet']): ?>
         <div style="color:var(--muted);font-size:12px;margin-top:4px;line-height:1.5"><?= htmlspecialchars(substr($sig['snippet'], 0, 200)) ?>...</div>
         <?php endif; ?>
@@ -161,7 +164,7 @@ include 'layout.php';
       <?php endforeach; ?>
     </div>
     <?php else: ?>
-    <div style="padding:20px;color:var(--muted);font-size:13px">No job postings auto-fetched (Indeed blocked server access). Use the paste feature above.</div>
+    <div style="padding:20px;color:var(--muted);font-size:13px">No job postings fetched. Try <strong style="color:var(--text)">Re-Enrich</strong> &mdash; Adzuna may have listings for this company. If still empty, use the paste feature above.</div>
     <?php endif; ?>
   </div>
 
@@ -258,12 +261,13 @@ async function enrichNow() {
   btn.textContent = 'Enriching...';
   btn.disabled = true;
   status.style.display = 'block';
-  status.innerHTML = '<span style="color:var(--muted)">Fetching signals from Google News... this may take 15-20 seconds.</span>';
+  status.innerHTML = '<span style="color:var(--muted)">Fetching signals from Google News + Adzuna Jobs... this may take 15-20 seconds.</span>';
   var r = await fetch('api/enrich.php?id=<?= $id ?>', {method: 'POST'});
   var d = await r.json();
   if (d.ok) {
-    status.innerHTML = '<span style="color:var(--success)">&#10003; Done! Score: ' + d.score + ' (' + d.priority + '). Reloading...</span>';
-    setTimeout(function(){ location.reload(); }, 1500);
+    var msg = '&#10003; Done! Score: ' + d.score + ' (' + d.priority + '). News: ' + d.news_count + ', Jobs: ' + d.jobs_count + ', Tech detected: ' + d.tech_found + '. Reloading...';
+    status.innerHTML = '<span style="color:var(--success)">' + msg + '</span>';
+    setTimeout(function(){ location.reload(); }, 2000);
   } else {
     status.innerHTML = '<span style="color:var(--danger)">Error: ' + (d.error || 'unknown error') + '</span>';
     btn.textContent = '&#9889; Re-Enrich';
@@ -275,7 +279,6 @@ function copyEmail() {
   var el = document.getElementById('emailBody');
   el.select();
   document.execCommand('copy');
-  toast('Email copied to clipboard');
 }
 </script>
 
