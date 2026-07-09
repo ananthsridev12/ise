@@ -8,10 +8,44 @@ class NewsFetcher {
         return self::parseRSS($url, 'GoogleNews');
     }
 
-    public static function fetchIndeedJobs($companyName, $country = 'US') {
-        $q = urlencode($companyName);
-        $url = "https://www.indeed.com/rss?q={$q}&sort=date&limit=20";
-        return self::parseRSS($url, 'Indeed');
+    public static function fetchAdzunaJobs($companyName, $country = 'US') {
+        if (!ADZUNA_APP_ID || !ADZUNA_APP_KEY) return [];
+
+        $countryMap = ['us' => 'us', 'in' => 'in', 'gb' => 'gb', 'uk' => 'gb', 'au' => 'au'];
+        $cl = strtolower($country);
+        $cc = isset($countryMap[$cl]) ? $countryMap[$cl] : 'us';
+
+        $q = urlencode('"' . $companyName . '"');
+        $url = 'https://api.adzuna.com/v1/api/jobs/' . $cc . '/search/1'
+             . '?app_id=' . ADZUNA_APP_ID
+             . '&app_key=' . ADZUNA_APP_KEY
+             . '&what=' . $q
+             . '&results_per_page=20'
+             . '&content-type=application/json';
+
+        $ctx = stream_context_create(['http' => [
+            'timeout'    => 15,
+            'user_agent' => 'Mozilla/5.0 (compatible; ISE/1.0)',
+            'header'     => "Accept: application/json\r\n",
+        ]]);
+
+        $raw = @file_get_contents($url, false, $ctx);
+        if (!$raw) return [];
+
+        $data = json_decode($raw, true);
+        if (!isset($data['results'])) return [];
+
+        $items = [];
+        foreach ($data['results'] as $job) {
+            $items[] = [
+                'title'          => isset($job['title'])        ? $job['title']        : '',
+                'snippet'        => isset($job['description'])  ? strip_tags($job['description']) : '',
+                'url'            => isset($job['redirect_url']) ? $job['redirect_url'] : '',
+                'published_date' => isset($job['created'])      ? $job['created']      : '',
+                'source'         => 'Adzuna',
+            ];
+        }
+        return array_slice($items, 0, 20);
     }
 
     private static function parseRSS($url, $source) {

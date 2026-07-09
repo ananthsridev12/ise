@@ -10,7 +10,9 @@ defined('DB_USER')    || define('DB_USER',    'de2shrnx');
 defined('DB_PASS')    || define('DB_PASS',    '');
 defined('DB_CHARSET') || define('DB_CHARSET', 'utf8mb4');
 
-defined('HUNTER_API_KEY') || define('HUNTER_API_KEY', '');
+defined('HUNTER_API_KEY')  || define('HUNTER_API_KEY',  '');
+defined('ADZUNA_APP_ID')   || define('ADZUNA_APP_ID',   '');
+defined('ADZUNA_APP_KEY')  || define('ADZUNA_APP_KEY',  '');
 
 define('APP_NAME',       'ISE — Intent Signal Engine');
 define('ITEMS_PER_PAGE', 25);

@@ -13,8 +13,9 @@ if (!$id) { echo json_encode(['error' => 'No company id']); exit; }
 $company = DB::fetchOne('SELECT * FROM companies WHERE id = ?', [$id]);
 if (!$company) { echo json_encode(['error' => 'Not found']); exit; }
 
-$news = NewsFetcher::fetchGoogleNews($company['name'], $company['country'] ?? 'US');
-$jobs = NewsFetcher::fetchIndeedJobs($company['name'], $company['country'] ?? 'US');
+$country = $company['country'] ?? 'US';
+$news = NewsFetcher::fetchGoogleNews($company['name'], $country);
+$jobs = NewsFetcher::fetchAdzunaJobs($company['name'], $country);
 $allItems = array_merge($news, $jobs);
 
 DB::query('DELETE FROM signals WHERE company_id = ?', [$id]);
@@ -33,7 +34,8 @@ foreach ($allItems as $item) {
 
 $techStack = [];
 foreach ($jobs as $job) {
-    $hits = TechExtractor::extract($job['title'] . ' ' . $job['snippet']);
+    $text = $job['title'] . ' ' . $job['snippet'];
+    $hits = TechExtractor::extract($text);
     foreach ($hits as $hit) {
         DB::query(
             'INSERT INTO company_tech (company_id, tool, category, confidence, source_url, source_title)
@@ -57,14 +59,23 @@ DB::insert('email_drafts', [
 ]);
 
 DB::update('companies', [
-    'score'       => $scoreData['score'],
-    'priority'    => $scoreData['priority'],
-    'signal_count'=> $scoreData['signal_count'],
-    'top_signal'  => $scoreData['top_signal'],
-    'signal_types'=> implode(', ', $scoreData['signal_types']),
-    'tech_stack'  => json_encode(array_column($techStack, 'tool')),
-    'enriched_at' => date('Y-m-d H:i:s'),
-    'status'      => 'enriched',
+    'score'        => $scoreData['score'],
+    'priority'     => $scoreData['priority'],
+    'signal_count' => $scoreData['signal_count'],
+    'top_signal'   => $scoreData['top_signal'],
+    'signal_types' => implode(', ', $scoreData['signal_types']),
+    'tech_stack'   => json_encode(array_column($techStack, 'tool')),
+    'enriched_at'  => date('Y-m-d H:i:s'),
+    'status'       => 'enriched',
 ], 'id = ?', [$id]);
 
-echo json_encode(['ok' => true, 'score' => $scoreData['score'], 'priority' => $scoreData['priority']]);
+$adzunaActive = (ADZUNA_APP_ID && ADZUNA_APP_KEY);
+echo json_encode([
+    'ok'            => true,
+    'score'         => $scoreData['score'],
+    'priority'      => $scoreData['priority'],
+    'news_count'    => count($news),
+    'jobs_count'    => count($jobs),
+    'tech_found'    => count($techStack),
+    'adzuna_active' => $adzunaActive,
+]);
