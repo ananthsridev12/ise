@@ -5,8 +5,8 @@ if (file_exists(__DIR__ . '/config.local.php')) {
 }
 
 defined('DB_HOST')    || define('DB_HOST',    'localhost');
-defined('DB_NAME')    || define('DB_NAME',    'de2shrnx_ise');
-defined('DB_USER')    || define('DB_USER',    'de2shrnx_ise');
+defined('DB_NAME')    || define('DB_NAME',    'de2shrnx_intel');
+defined('DB_USER')    || define('DB_USER',    'de2shrnx');
 defined('DB_PASS')    || define('DB_PASS',    '');
 defined('DB_CHARSET') || define('DB_CHARSET', 'utf8mb4');
 
