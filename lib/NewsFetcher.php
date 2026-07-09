@@ -15,11 +15,12 @@ class NewsFetcher {
         $cl = strtolower($country);
         $cc = isset($countryMap[$cl]) ? $countryMap[$cl] : 'us';
 
-        $q = urlencode('"' . $companyName . '"');
+        // Use 'company' param so we only get jobs posted BY this company, not jobs mentioning it
+        $company = urlencode($companyName);
         $url = 'https://api.adzuna.com/v1/api/jobs/' . $cc . '/search/1'
              . '?app_id=' . ADZUNA_APP_ID
              . '&app_key=' . ADZUNA_APP_KEY
-             . '&what=' . $q
+             . '&company=' . $company
              . '&results_per_page=20'
              . '&content-type=application/json';
 
