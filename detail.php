@@ -86,7 +86,35 @@ include 'layout.php';
 
   <!-- Tech Stack -->
   <div class="card">
-    <div style="padding:16px 20px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600">&#128736; Detected Tech Stack <span style="color:var(--muted);font-weight:400;font-size:12px">&mdash; inferred from job postings</span></div>
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center">
+      <span>&#128736; Detected Tech Stack</span>
+      <button onclick="togglePasteBox()" class="btn btn-secondary btn-sm">+ Paste Job Description</button>
+    </div>
+
+    <!-- Manual paste box -->
+    <div id="pasteBox" style="display:none;padding:16px 20px;border-bottom:1px solid var(--border);background:rgba(0,0,0,0.2)">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
+        Indeed/LinkedIn is blocking automated fetch. Copy a job description from their site and paste it here — we'll extract the tools automatically.
+      </div>
+      <div class="form-group">
+        <label>Job Title (optional)</label>
+        <input type="text" id="pasteTitle" placeholder="e.g. SAP Consultant, ERP Project Manager">
+      </div>
+      <div class="form-group">
+        <label>Job URL (optional)</label>
+        <input type="url" id="pasteUrl" placeholder="https://indeed.com/viewjob?...">
+      </div>
+      <div class="form-group">
+        <label>Job Description Text *</label>
+        <textarea id="pasteText" rows="7" placeholder="Paste the full job description here..."></textarea>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="extractFromPaste()" class="btn btn-primary btn-sm" id="extractBtn">Extract Tech Stack</button>
+        <button onclick="togglePasteBox()" class="btn btn-ghost btn-sm">Cancel</button>
+      </div>
+      <div id="extractResult" style="margin-top:10px;font-size:13px"></div>
+    </div>
+
     <div style="padding:16px 20px">
       <?php if ($tech): ?>
         <?php foreach ($techByCategory as $cat => $tools): ?>
@@ -97,7 +125,7 @@ include 'layout.php';
             <div>
               <div style="font-weight:600;font-size:13px"><?= htmlspecialchars($t['tool']) ?></div>
               <?php if ($t['source_title']): ?>
-              <div style="font-size:11px;color:var(--muted);margin-top:2px">Job: &ldquo;<?= htmlspecialchars(substr($t['source_title'], 0, 55)) ?>...&rdquo;</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px">Source: &ldquo;<?= htmlspecialchars(substr($t['source_title'], 0, 60)) ?>&rdquo;</div>
               <?php endif; ?>
               <?php if ($t['source_url']): ?>
               <a href="<?= htmlspecialchars($t['source_url']) ?>" target="_blank" style="font-size:11px;color:var(--accent)">View source &rarr;</a>
@@ -109,10 +137,9 @@ include 'layout.php';
         </div>
         <?php endforeach; ?>
       <?php else: ?>
-        <div style="color:var(--muted);font-size:13px;line-height:1.6">
-          No tools detected. This usually means:<br>
-          &bull; No recent job postings found on Indeed<br>
-          &bull; Job descriptions didn't mention known ERP/CPQ tools
+        <div style="color:var(--muted);font-size:13px;line-height:1.8">
+          No tools detected yet.<br>
+          <strong style="color:var(--text)">Try this:</strong> Go to Indeed, search for this company's jobs, copy a job description, and click <em>"+ Paste Job Description"</em> above.
         </div>
       <?php endif; ?>
     </div>
@@ -120,7 +147,7 @@ include 'layout.php';
 
   <!-- Job Postings -->
   <div class="card">
-    <div style="padding:16px 20px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600">&#128188; Job Postings <span style="color:var(--muted);font-weight:400">(<?= count($jobSigs) ?> found)</span></div>
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600">&#128188; Job Postings <span style="color:var(--muted);font-weight:400">(<?= count($jobSigs) ?> auto-fetched)</span></div>
     <?php if ($jobSigs): ?>
     <div>
       <?php foreach ($jobSigs as $sig): ?>
@@ -134,7 +161,7 @@ include 'layout.php';
       <?php endforeach; ?>
     </div>
     <?php else: ?>
-    <div style="padding:20px;color:var(--muted);font-size:13px">No job postings found for this company.</div>
+    <div style="padding:20px;color:var(--muted);font-size:13px">No job postings auto-fetched (Indeed blocked server access). Use the paste feature above.</div>
     <?php endif; ?>
   </div>
 
@@ -145,7 +172,7 @@ include 'layout.php';
 
   <!-- News Signals -->
   <div class="card">
-    <div style="padding:16px 20px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600">&#128240; News & Signals <span style="color:var(--muted);font-weight:400">(<?= count($newsSigs) ?> found)</span></div>
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600">&#128240; News &amp; Signals <span style="color:var(--muted);font-weight:400">(<?= count($newsSigs) ?> found)</span></div>
     <?php if ($newsSigs): ?>
     <div>
       <?php foreach ($newsSigs as $sig): ?>
@@ -187,26 +214,65 @@ include 'layout.php';
 </div>
 
 <script>
+function togglePasteBox() {
+  var box = document.getElementById('pasteBox');
+  box.style.display = box.style.display === 'none' ? 'block' : 'none';
+}
+
+async function extractFromPaste() {
+  var text = document.getElementById('pasteText').value.trim();
+  if (!text) { alert('Please paste a job description first'); return; }
+  var btn = document.getElementById('extractBtn');
+  btn.textContent = 'Extracting...';
+  btn.disabled = true;
+
+  var fd = new FormData();
+  fd.append('company_id', '<?= $id ?>');
+  fd.append('text', text);
+  fd.append('source_title', document.getElementById('pasteTitle').value || 'Manual paste');
+  fd.append('source_url',   document.getElementById('pasteUrl').value || '');
+
+  var r = await fetch('api/extract_tech.php', {method: 'POST', body: fd});
+  var d = await r.json();
+
+  var result = document.getElementById('extractResult');
+  if (d.ok) {
+    if (d.found && d.found.length > 0) {
+      result.innerHTML = '<span style="color:var(--success)">&#10003; Found: <strong>' + d.found.join(', ') + '</strong>. Reloading...</span>';
+      setTimeout(function(){ location.reload(); }, 1500);
+    } else {
+      result.innerHTML = '<span style="color:var(--warning)">No known ERP/CPQ/MES tools found in this text. Try pasting the full job description.</span>';
+      btn.textContent = 'Extract Tech Stack';
+      btn.disabled = false;
+    }
+  } else {
+    result.innerHTML = '<span style="color:var(--danger)">Error: ' + (d.error || 'unknown') + '</span>';
+    btn.textContent = 'Extract Tech Stack';
+    btn.disabled = false;
+  }
+}
+
 async function enrichNow() {
-  const btn = document.getElementById('enrichBtn');
-  const status = document.getElementById('enrichStatus');
+  var btn = document.getElementById('enrichBtn');
+  var status = document.getElementById('enrichStatus');
   btn.textContent = 'Enriching...';
   btn.disabled = true;
   status.style.display = 'block';
-  status.innerHTML = '<span style="color:var(--muted)">Fetching signals from Google News and Indeed... this may take 15-20 seconds.</span>';
-  const r = await fetch('api/enrich.php?id=<?= $id ?>', {method: 'POST'});
-  const d = await r.json();
+  status.innerHTML = '<span style="color:var(--muted)">Fetching signals from Google News... this may take 15-20 seconds.</span>';
+  var r = await fetch('api/enrich.php?id=<?= $id ?>', {method: 'POST'});
+  var d = await r.json();
   if (d.ok) {
     status.innerHTML = '<span style="color:var(--success)">&#10003; Done! Score: ' + d.score + ' (' + d.priority + '). Reloading...</span>';
-    setTimeout(() => location.reload(), 1500);
+    setTimeout(function(){ location.reload(); }, 1500);
   } else {
     status.innerHTML = '<span style="color:var(--danger)">Error: ' + (d.error || 'unknown error') + '</span>';
     btn.textContent = '&#9889; Re-Enrich';
     btn.disabled = false;
   }
 }
+
 function copyEmail() {
-  const el = document.getElementById('emailBody');
+  var el = document.getElementById('emailBody');
   el.select();
   document.execCommand('copy');
   toast('Email copied to clipboard');
