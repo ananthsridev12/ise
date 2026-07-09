@@ -1,8 +1,5 @@
 -- ISE PHP App — MySQL Schema
--- Run this once in your cPanel phpMyAdmin or MySQL CLI
-
-CREATE DATABASE IF NOT EXISTS `ise` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE `ise`;
+-- Run this in phpMyAdmin after selecting your database (de2shrnx_intel)
 
 CREATE TABLE IF NOT EXISTS `companies` (
   `id`          INT AUTO_INCREMENT PRIMARY KEY,
