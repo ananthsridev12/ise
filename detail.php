@@ -5,24 +5,34 @@ require_once 'lib/DB.php';
 $id = (int)($_GET['id'] ?? 0);
 if (!$id) { header('Location: companies.php'); exit; }
 
-$company = DB::fetchOne('SELECT * FROM companies WHERE id = ?', [$id]);
+$company = DB::fetchOne('SELECT * FROM companies WHERE id = ?', array($id));
 if (!$company) { header('Location: companies.php'); exit; }
 
-$signals = DB::fetchAll('SELECT * FROM signals WHERE company_id = ? ORDER BY created_at DESC', [$id]);
-$tech    = DB::fetchAll('SELECT * FROM company_tech WHERE company_id = ? ORDER BY confidence DESC', [$id]);
-$email   = DB::fetchOne('SELECT * FROM email_drafts WHERE company_id = ? ORDER BY id DESC LIMIT 1', [$id]);
+$signals  = DB::fetchAll('SELECT * FROM signals WHERE company_id = ? ORDER BY created_at DESC', array($id));
+$tech     = DB::fetchAll('SELECT * FROM company_tech WHERE company_id = ? ORDER BY confidence DESC', array($id));
+$emails   = DB::fetchAll('SELECT * FROM email_drafts WHERE company_id = ? ORDER BY touch_number ASC, id ASC', array($id));
+$email    = $emails ? $emails[0] : null;
+
+$matchedService = null;
+if ($email && !empty($email['matched_service_id'])) {
+    $matchedService = DB::fetchOne(
+        'SELECT s.*, v.name as vertical_name FROM kb_services s LEFT JOIN kb_verticals v ON s.vertical_id=v.id WHERE s.id=?',
+        array($email['matched_service_id'])
+    );
+}
 
 $priority  = strtolower($company['priority'] ?? 'low');
 $newsSigs  = array_values(array_filter($signals, function($s) { return $s['source'] === 'GoogleNews'; }));
 $jobSigs   = array_values(array_filter($signals, function($s) { return $s['source'] !== 'GoogleNews'; }));
 
-$techByCategory = [];
+$techByCategory = array();
 foreach ($tech as $t) {
     $techByCategory[$t['category']][] = $t;
 }
 
 $scoreColor = $priority === 'high' ? 'var(--success)' : ($priority === 'medium' ? 'var(--warning)' : 'var(--muted)');
 
+$currentPage = 'companies';
 include 'layout.php';
 ?>
 
@@ -39,7 +49,7 @@ include 'layout.php';
   <div style="display:flex;gap:10px;align-items:center">
     <button onclick="enrichNow()" class="btn btn-secondary" id="enrichBtn">&#9889; Re-Enrich</button>
     <?php if ($email): ?>
-    <a href="outreach.php?company=<?= $id ?>" class="btn btn-primary">&#9993; View Email Draft</a>
+    <a href="outreach.php?company=<?= $id ?>" class="btn btn-primary">&#9993; View All Emails</a>
     <?php endif; ?>
   </div>
 </div>
@@ -71,8 +81,15 @@ include 'layout.php';
       </div>
     </div>
     <div>
-      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:600">Last Enriched</div>
-      <div style="font-size:13px;font-weight:500;margin-top:4px"><?= $company['enriched_at'] ? date('d M Y, H:i', strtotime($company['enriched_at'])) : '&mdash;' ?></div>
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:600">Matched Service</div>
+      <?php if ($matchedService): ?>
+      <div style="font-size:12px;font-weight:600;margin-top:4px;color:var(--accent)"><?= htmlspecialchars($matchedService['name']) ?></div>
+      <?php if ($matchedService['vertical_name']): ?>
+      <div style="font-size:11px;color:var(--muted)"><?= htmlspecialchars($matchedService['vertical_name']) ?></div>
+      <?php endif; ?>
+      <?php else: ?>
+      <div style="font-size:13px;color:var(--muted);margin-top:4px">&mdash;</div>
+      <?php endif; ?>
     </div>
   </div>
 </div>
@@ -91,23 +108,11 @@ include 'layout.php';
       <button onclick="togglePasteBox()" class="btn btn-secondary btn-sm">+ Paste Job Description</button>
     </div>
 
-    <!-- Manual paste box -->
     <div id="pasteBox" style="display:none;padding:16px 20px;border-bottom:1px solid var(--border);background:rgba(0,0,0,0.2)">
-      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
-        Paste a job description from Indeed or LinkedIn &mdash; we'll extract the tools automatically.
-      </div>
-      <div class="form-group">
-        <label>Job Title (optional)</label>
-        <input type="text" id="pasteTitle" placeholder="e.g. SAP Consultant, ERP Project Manager">
-      </div>
-      <div class="form-group">
-        <label>Job URL (optional)</label>
-        <input type="url" id="pasteUrl" placeholder="https://indeed.com/viewjob?...">
-      </div>
-      <div class="form-group">
-        <label>Job Description Text *</label>
-        <textarea id="pasteText" rows="7" placeholder="Paste the full job description here..."></textarea>
-      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Paste a job description &mdash; we'll extract the tools automatically.</div>
+      <div class="form-group"><label>Job Title (optional)</label><input type="text" id="pasteTitle" placeholder="e.g. SAP Consultant"></div>
+      <div class="form-group"><label>Job URL (optional)</label><input type="url" id="pasteUrl"></div>
+      <div class="form-group"><label>Job Description Text *</label><textarea id="pasteText" rows="7"></textarea></div>
       <div style="display:flex;gap:8px">
         <button onclick="extractFromPaste()" class="btn btn-primary btn-sm" id="extractBtn">Extract Tech Stack</button>
         <button onclick="togglePasteBox()" class="btn btn-ghost btn-sm">Cancel</button>
@@ -137,10 +142,7 @@ include 'layout.php';
         </div>
         <?php endforeach; ?>
       <?php else: ?>
-        <div style="color:var(--muted);font-size:13px;line-height:1.8">
-          No tools detected yet.<br>
-          <strong style="color:var(--text)">Try this:</strong> Click <em>"Re-Enrich"</em> to fetch Adzuna jobs, or paste a job description manually using the button above.
-        </div>
+        <div style="color:var(--muted);font-size:13px;line-height:1.8">No tools detected yet.<br><strong style="color:var(--text)">Try:</strong> Click <em>Re-Enrich</em> or paste a job description above.</div>
       <?php endif; ?>
     </div>
   </div>
@@ -164,7 +166,7 @@ include 'layout.php';
       <?php endforeach; ?>
     </div>
     <?php else: ?>
-    <div style="padding:20px;color:var(--muted);font-size:13px">No job postings fetched. Try <strong style="color:var(--text)">Re-Enrich</strong> &mdash; Adzuna may have listings for this company. If still empty, use the paste feature above.</div>
+    <div style="padding:20px;color:var(--muted);font-size:13px">No job postings fetched. Try <strong style="color:var(--text)">Re-Enrich</strong>.</div>
     <?php endif; ?>
   </div>
 
@@ -189,27 +191,58 @@ include 'layout.php';
       <?php endforeach; ?>
     </div>
     <?php else: ?>
-    <div style="padding:20px;color:var(--muted);font-size:13px">No news signals found. Try re-enriching or check the company name spelling.</div>
+    <div style="padding:20px;color:var(--muted);font-size:13px">No news signals found. Try re-enriching.</div>
     <?php endif; ?>
   </div>
 
-  <!-- Email Draft -->
-  <?php if ($email): ?>
-  <div class="card">
-    <div style="padding:16px 20px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600">
-      &#9993; Email Draft
-      <span style="color:var(--muted);font-weight:400;font-size:12px;margin-left:8px">Angle: <?= htmlspecialchars(str_replace('_', ' ', $email['angle'])) ?></span>
+  <!-- Email Drafts -->
+  <?php if ($emails): ?>
+  <?php foreach ($emails as $em): ?>
+  <div class="card" id="emailCard<?= $em['id'] ?>">
+    <div style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:13px;font-weight:600">&#9993; Touch #<?= $em['touch_number'] ?? 1 ?></span>
+        <?php if (!empty($em['ai_provider'])): ?>
+        <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;background:rgba(99,102,241,0.15);color:#818cf8;letter-spacing:.05em"><?= strtoupper(htmlspecialchars($em['ai_provider'])) ?></span>
+        <?php endif; ?>
+      </div>
+      <div style="font-size:11px;color:var(--muted)"><?= date('d M Y', strtotime($em['created_at'])) ?></div>
     </div>
+    <?php if (!empty($em['matched_service_id']) && $matchedService && $matchedService['id'] == $em['matched_service_id']): ?>
+    <div style="padding:8px 20px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">
+      Pitched: <strong style="color:var(--text)"><?= htmlspecialchars($matchedService['name']) ?></strong>
+      <?php if ($matchedService['vertical_name']): ?> &middot; <?= htmlspecialchars($matchedService['vertical_name']) ?><?php endif; ?>
+    </div>
+    <?php endif; ?>
     <div style="padding:16px 20px">
       <div style="font-size:11px;color:var(--muted);margin-bottom:4px">SUBJECT</div>
-      <div style="font-size:13px;font-weight:600;margin-bottom:14px;line-height:1.4"><?= htmlspecialchars($email['subject']) ?></div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:14px;line-height:1.4"><?= htmlspecialchars($em['subject']) ?></div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:4px">BODY</div>
-      <textarea id="emailBody" rows="11" style="width:100%;font-size:12px;line-height:1.7;resize:vertical"><?= htmlspecialchars($email['body']) ?></textarea>
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <button onclick="copyEmail()" class="btn btn-secondary btn-sm">&#128203; Copy</button>
-        <a href="mailto:?subject=<?= urlencode($email['subject']) ?>&body=<?= urlencode($email['body']) ?>" class="btn btn-primary btn-sm">&#128232; Open in Mail Client</a>
+      <textarea id="emailBody<?= $em['id'] ?>" rows="10" style="width:100%;font-size:12px;line-height:1.7;resize:vertical"><?= htmlspecialchars($em['body']) ?></textarea>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button onclick="copyEmail(<?= $em['id'] ?>)" class="btn btn-secondary btn-sm">&#128203; Copy</button>
+        <a href="mailto:?subject=<?= urlencode($em['subject']) ?>&body=<?= urlencode($em['body']) ?>" class="btn btn-ghost btn-sm">&#128232; Open in Mail</a>
       </div>
     </div>
+  </div>
+  <?php endforeach; ?>
+
+  <!-- Generate Next Touch -->
+  <?php
+  $maxTouch = 0;
+  foreach ($emails as $em) { if (($em['touch_number'] ?? 1) > $maxTouch) $maxTouch = $em['touch_number'] ?? 1; }
+  $nextTouch = $maxTouch + 1;
+  ?>
+  <div id="genEmailCard" style="background:var(--card);border:1px dashed var(--border);border-radius:10px;padding:20px;text-align:center">
+    <div style="font-size:13px;color:var(--muted);margin-bottom:12px">Generate follow-up email using AI</div>
+    <button onclick="generateEmail(<?= $nextTouch ?>)" class="btn btn-primary" id="genBtn">&#10024; Generate Touch #<?= $nextTouch ?></button>
+    <div id="genStatus" style="margin-top:12px;font-size:13px"></div>
+  </div>
+
+  <?php else: ?>
+  <div class="card" style="padding:20px;text-align:center">
+    <div style="font-size:13px;color:var(--muted);margin-bottom:12px">No email drafts yet. Enrich this company to generate the first email.</div>
+    <button onclick="enrichNow()" class="btn btn-primary">&#9889; Enrich &amp; Generate Email</button>
   </div>
   <?php endif; ?>
 
@@ -217,6 +250,8 @@ include 'layout.php';
 </div>
 
 <script>
+var companyId = <?= $id ?>;
+
 function togglePasteBox() {
   var box = document.getElementById('pasteBox');
   box.style.display = box.style.display === 'none' ? 'block' : 'none';
@@ -228,23 +263,20 @@ async function extractFromPaste() {
   var btn = document.getElementById('extractBtn');
   btn.textContent = 'Extracting...';
   btn.disabled = true;
-
   var fd = new FormData();
-  fd.append('company_id', '<?= $id ?>');
+  fd.append('company_id', companyId);
   fd.append('text', text);
   fd.append('source_title', document.getElementById('pasteTitle').value || 'Manual paste');
-  fd.append('source_url',   document.getElementById('pasteUrl').value || '');
-
-  var r = await fetch('api/extract_tech.php', {method: 'POST', body: fd});
+  fd.append('source_url', document.getElementById('pasteUrl').value || '');
+  var r = await fetch('api/extract_tech.php', {method:'POST', body:fd});
   var d = await r.json();
-
   var result = document.getElementById('extractResult');
   if (d.ok) {
     if (d.found && d.found.length > 0) {
       result.innerHTML = '<span style="color:var(--success)">&#10003; Found: <strong>' + d.found.join(', ') + '</strong>. Reloading...</span>';
       setTimeout(function(){ location.reload(); }, 1500);
     } else {
-      result.innerHTML = '<span style="color:var(--warning)">No known ERP/CPQ/MES tools found in this text. Try pasting the full job description.</span>';
+      result.innerHTML = '<span style="color:var(--warning)">No known tools found. Try pasting the full job description.</span>';
       btn.textContent = 'Extract Tech Stack';
       btn.disabled = false;
     }
@@ -261,13 +293,13 @@ async function enrichNow() {
   btn.textContent = 'Enriching...';
   btn.disabled = true;
   status.style.display = 'block';
-  status.innerHTML = '<span style="color:var(--muted)">Fetching signals from Google News + Adzuna Jobs... this may take 15-20 seconds.</span>';
-  var r = await fetch('api/enrich.php?id=<?= $id ?>', {method: 'POST'});
+  status.innerHTML = '<span style="color:var(--muted)">Fetching signals... this may take 15-20 seconds.</span>';
+  var r = await fetch('api/enrich.php?id=' + companyId, {method:'POST'});
   var d = await r.json();
   if (d.ok) {
-    var msg = '&#10003; Done! Score: ' + d.score + ' (' + d.priority + '). News: ' + d.news_count + ', Jobs: ' + d.jobs_count + ', Tech detected: ' + d.tech_found + '. Reloading...';
-    status.innerHTML = '<span style="color:var(--success)">' + msg + '</span>';
-    setTimeout(function(){ location.reload(); }, 2000);
+    var aiNote = d.ai_used ? ' AI (' + (d.matched_service || 'no match') + ')' : ' template';
+    status.innerHTML = '<span style="color:var(--success)">&#10003; Done! Score: ' + d.score + ' (' + d.priority + '). News: ' + d.news_count + ', Jobs: ' + d.jobs_count + ', Tech: ' + d.tech_found + '. Email via' + aiNote + '. Reloading...</span>';
+    setTimeout(function(){ location.reload(); }, 2200);
   } else {
     status.innerHTML = '<span style="color:var(--danger)">Error: ' + (d.error || 'unknown error') + '</span>';
     btn.textContent = '&#9889; Re-Enrich';
@@ -275,8 +307,26 @@ async function enrichNow() {
   }
 }
 
-function copyEmail() {
-  var el = document.getElementById('emailBody');
+async function generateEmail(touchNumber) {
+  var btn = document.getElementById('genBtn');
+  var status = document.getElementById('genStatus');
+  btn.disabled = true;
+  btn.textContent = 'Generating...';
+  status.innerHTML = '<span style="color:var(--muted)">Calling AI provider...</span>';
+  var r = await fetch('api/generate_email.php?company_id=' + companyId + '&touch_number=' + touchNumber);
+  var d = await r.json();
+  if (d.ok) {
+    status.innerHTML = '<span style="color:var(--success)">&#10003; Touch #' + d.touch_number + ' generated via ' + d.provider.toUpperCase() + '. Reloading...</span>';
+    setTimeout(function(){ location.reload(); }, 1500);
+  } else {
+    status.innerHTML = '<span style="color:var(--danger)">' + (d.error || 'Generation failed. Check AI settings.') + '</span>';
+    btn.disabled = false;
+    btn.textContent = '&#10024; Generate Touch #' + touchNumber;
+  }
+}
+
+function copyEmail(id) {
+  var el = document.getElementById('emailBody' + id);
   el.select();
   document.execCommand('copy');
 }
