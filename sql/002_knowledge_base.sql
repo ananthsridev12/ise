@@ -1,6 +1,6 @@
 -- 002_knowledge_base.sql
 -- Adds KB tables and extends email_drafts for AI + multi-touch.
--- Safe to re-run: uses IF NOT EXISTS and column existence guards.
+-- Compatible with MySQL 5.7+. Safe to re-run.
 
 CREATE TABLE IF NOT EXISTS `kb_company` (
   `id`                    INT AUTO_INCREMENT PRIMARY KEY,
@@ -120,10 +120,49 @@ CREATE TABLE IF NOT EXISTS `ai_settings` (
   `updated_at`          DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
--- Extend email_drafts for AI + multi-touch (safe to re-run)
-ALTER TABLE `email_drafts`
-  ADD COLUMN IF NOT EXISTS `touch_number`       INT DEFAULT 1,
-  ADD COLUMN IF NOT EXISTS `ai_provider`        VARCHAR(50),
-  ADD COLUMN IF NOT EXISTS `ai_model`           VARCHAR(100),
-  ADD COLUMN IF NOT EXISTS `matched_service_id` INT,
-  ADD COLUMN IF NOT EXISTS `prompt_context`     TEXT;
+-- Extend email_drafts for AI + multi-touch
+-- Uses a procedure to guard each column (MySQL 5.7 compatible)
+DROP PROCEDURE IF EXISTS ise_migrate_002;
+
+DELIMITER //
+CREATE PROCEDURE ise_migrate_002()
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'email_drafts' AND COLUMN_NAME = 'touch_number'
+  ) THEN
+    ALTER TABLE `email_drafts` ADD COLUMN `touch_number` INT DEFAULT 1;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'email_drafts' AND COLUMN_NAME = 'ai_provider'
+  ) THEN
+    ALTER TABLE `email_drafts` ADD COLUMN `ai_provider` VARCHAR(50);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'email_drafts' AND COLUMN_NAME = 'ai_model'
+  ) THEN
+    ALTER TABLE `email_drafts` ADD COLUMN `ai_model` VARCHAR(100);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'email_drafts' AND COLUMN_NAME = 'matched_service_id'
+  ) THEN
+    ALTER TABLE `email_drafts` ADD COLUMN `matched_service_id` INT;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'email_drafts' AND COLUMN_NAME = 'prompt_context'
+  ) THEN
+    ALTER TABLE `email_drafts` ADD COLUMN `prompt_context` TEXT;
+  END IF;
+END //
+DELIMITER ;
+
+CALL ise_migrate_002();
+DROP PROCEDURE IF EXISTS ise_migrate_002;
