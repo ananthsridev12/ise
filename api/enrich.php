@@ -69,14 +69,33 @@ try {
         'status'       => 'enriched',
     ), 'id = ?', array($id));
 
+    // Auto-generate touch 1 email if AI is configured and this company has none yet
+    $emailGenerated = false;
+    try {
+        require_once __DIR__ . '/../lib/KBMatcher.php';
+        require_once __DIR__ . '/../lib/AIEmailDrafter.php';
+        require_once __DIR__ . '/../lib/EmailGenerator.php';
+        $aiCfg      = DB::fetchOne('SELECT * FROM ai_settings LIMIT 1') ?: array();
+        $provKey    = ($aiCfg['provider'] ?? '') . '_key';
+        $hasKey     = !empty($aiCfg[$provKey]);
+        $hasEmail   = (bool)DB::fetchOne('SELECT id FROM email_drafts WHERE company_id = ? AND touch_number = 1', array($id));
+        if ($hasKey && !$hasEmail) {
+            $genResult      = EmailGenerator::generate($id, 1);
+            $emailGenerated = !empty($genResult['ok']);
+        }
+    } catch (Exception $ignored) {
+        // Auto-generate is best-effort — enrich response is still returned
+    }
+
     ob_end_clean();
     echo json_encode(array(
-        'ok'         => true,
-        'score'      => $scoreData['score'],
-        'priority'   => $scoreData['priority'],
-        'news_count' => count($news),
-        'jobs_count' => count($jobs),
-        'tech_found' => count($techStack),
+        'ok'              => true,
+        'score'           => $scoreData['score'],
+        'priority'        => $scoreData['priority'],
+        'news_count'      => count($news),
+        'jobs_count'      => count($jobs),
+        'tech_found'      => count($techStack),
+        'email_generated' => $emailGenerated,
     ));
 
 } catch (Exception $e) {

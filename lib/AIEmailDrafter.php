@@ -1,61 +1,87 @@
 <?php
 class AIEmailDrafter {
 
-    public static function draft($company, $scoreData, $techStack, $service, $sender, $tone, $aiSettings, $touchNumber = 1, $priorSubject = '', $persona = null) {
-        $prompt = self::buildPrompt($company, $scoreData, $techStack, $service, $sender, $tone, $aiSettings, $touchNumber, $priorSubject, $persona);
-
+    /**
+     * Draft an email, optionally continuing an existing conversation thread.
+     * Returns subject, body, angle, provider, prompt (user message), messages (JSON), system_prompt.
+     */
+    public static function draft($company, $scoreData, $techStack, $service, $sender, $tone, $aiSettings, $touchNumber = 1, $priorSubject = '', $persona = null, $thread = null) {
         $provider = $aiSettings['provider'] ?? 'gemini';
-        $raw = '';
 
-        if ($provider === 'gemini' && !empty($aiSettings['gemini_key'])) {
-            $raw = self::callGemini($prompt, $aiSettings['gemini_key'], $aiSettings['model'] ?? '');
-        } elseif ($provider === 'claude' && !empty($aiSettings['claude_key'])) {
-            $raw = self::callClaude($prompt, $aiSettings['claude_key'], $aiSettings['model'] ?? '');
+        // Static KB context — same for every email to this service/sender combo (cacheable)
+        $systemPrompt = self::buildSystemPrompt($service, $sender, $tone, $aiSettings);
+
+        // Dynamic per-company context — changes per company and per touch
+        $userMessage = self::buildUserMessage($company, $scoreData, $techStack, $touchNumber, $priorSubject, $persona, $aiSettings);
+
+        // Load existing conversation history from thread
+        $messages = array();
+        if ($thread && !empty($thread['messages'])) {
+            $messages = json_decode($thread['messages'], true) ?: array();
+        }
+        $messages[] = array('role' => 'user', 'content' => $userMessage);
+
+        $raw = '';
+        if ($provider === 'claude' && !empty($aiSettings['claude_key'])) {
+            $raw = self::callClaude($messages, $systemPrompt, $aiSettings['claude_key'], $aiSettings['model'] ?? '');
+        } elseif ($provider === 'gemini' && !empty($aiSettings['gemini_key'])) {
+            // Gemini: flatten system + conversation into a single prompt string
+            $combined = $systemPrompt . "\n\n" . self::flattenMessages($messages);
+            $raw = self::callGemini($combined, $aiSettings['gemini_key'], $aiSettings['model'] ?? '');
         } elseif ($provider === 'openai' && !empty($aiSettings['openai_key'])) {
-            $raw = self::callOpenAI($prompt, $aiSettings['openai_key'], $aiSettings['model'] ?? '');
+            $raw = self::callOpenAI($messages, $systemPrompt, $aiSettings['openai_key'], $aiSettings['model'] ?? '');
         }
 
         if (!$raw) {
-            return array('subject' => '', 'body' => '', 'angle' => 'ai_failed', 'provider' => $provider, 'prompt' => $prompt);
+            return array(
+                'subject'       => '',
+                'body'          => '',
+                'angle'         => 'ai_failed',
+                'provider'      => $provider,
+                'prompt'        => $userMessage,
+                'messages'      => json_encode($messages),
+                'system_prompt' => $systemPrompt,
+            );
         }
 
-        $parsed = self::parseResponse($raw);
+        $parsed    = self::parseResponse($raw);
+        $messages[] = array('role' => 'assistant', 'content' => $raw);
+
         return array(
-            'subject'  => $parsed['subject'],
-            'body'     => $parsed['body'],
-            'angle'    => 'ai_' . $provider,
-            'provider' => $provider,
-            'prompt'   => $prompt,
+            'subject'       => $parsed['subject'],
+            'body'          => $parsed['body'],
+            'angle'         => 'ai_' . $provider,
+            'provider'      => $provider,
+            'prompt'        => $userMessage,
+            'messages'      => json_encode($messages),
+            'system_prompt' => $systemPrompt,
         );
     }
 
     public static function testConnection($aiSettings): array {
         $provider = $aiSettings['provider'] ?? 'gemini';
-        $prompt   = 'Respond with exactly the text: Connection successful.';
+        $testMsg  = array(array('role' => 'user', 'content' => 'Respond with exactly the text: Connection successful.'));
         $raw = '';
-        if ($provider === 'gemini' && !empty($aiSettings['gemini_key'])) {
-            $raw = self::callGemini($prompt, $aiSettings['gemini_key'], $aiSettings['model'] ?? '');
-        } elseif ($provider === 'claude' && !empty($aiSettings['claude_key'])) {
-            $raw = self::callClaude($prompt, $aiSettings['claude_key'], $aiSettings['model'] ?? '');
+        if ($provider === 'claude' && !empty($aiSettings['claude_key'])) {
+            $raw = self::callClaude($testMsg, '', $aiSettings['claude_key'], $aiSettings['model'] ?? '');
+        } elseif ($provider === 'gemini' && !empty($aiSettings['gemini_key'])) {
+            $raw = self::callGemini('Respond with exactly the text: Connection successful.', $aiSettings['gemini_key'], $aiSettings['model'] ?? '');
         } elseif ($provider === 'openai' && !empty($aiSettings['openai_key'])) {
-            $raw = self::callOpenAI($prompt, $aiSettings['openai_key'], $aiSettings['model'] ?? '');
+            $raw = self::callOpenAI($testMsg, '', $aiSettings['openai_key'], $aiSettings['model'] ?? '');
         }
         if (!$raw) {
             $keyField = $provider . '_key';
-            if (empty($aiSettings[$keyField])) {
-                return array('ok'=>false,'error'=>"No {$provider} API key saved.");
-            }
-            return array('ok'=>false,'error'=>"No response from {$provider}. Check the API key.");
+            if (empty($aiSettings[$keyField])) return array('ok' => false, 'error' => "No {$provider} API key saved.");
+            return array('ok' => false, 'error' => "No response from {$provider}. Check the API key.");
         }
-        return array('ok'=>true,'provider'=>$provider,'response'=>trim($raw));
+        return array('ok' => true, 'provider' => $provider, 'response' => trim($raw));
     }
 
-    private static function buildPrompt($company, $scoreData, $techStack, $service, $sender, $tone, $aiSettings, $touchNumber, $priorSubject, $persona = null) {
-        $kbCompany  = DB::fetchOne('SELECT * FROM kb_company LIMIT 1') ?: array();
-        $techTools  = $techStack ? implode(', ', array_column($techStack, 'tool')) : 'Not detected';
-        $signalList = $scoreData['signal_types'] ? implode(', ', $scoreData['signal_types']) : 'General';
-        $length     = $aiSettings['email_length'] ?? ($tone ? ($tone['email_length'] ?? 'medium') : 'medium');
-        $customInstructions = $aiSettings['custom_instructions'] ?? '';
+    // --- Static KB context (same per service/sender — cached at Claude API level) ---
+    private static function buildSystemPrompt($service, $sender, $tone, $aiSettings) {
+        $kbCompany   = DB::fetchOne('SELECT * FROM kb_company LIMIT 1') ?: array();
+        $companyName = $kbCompany['name'] ?? 'SolidPro';
+        $credibility = $kbCompany['credibility_statement'] ?? 'SolidPro specialises in digital transformation for manufacturers.';
 
         $senderName     = $sender ? $sender['full_name']              : '[Your Name]';
         $senderTitle    = $sender ? $sender['title']                  : '[Your Title]';
@@ -64,93 +90,99 @@ class AIEmailDrafter {
         $senderClosing  = $sender ? ($sender['email_closing_style'] ?? '') : '';
         $senderSig      = $sender ? ($sender['signature'] ?? '')      : '';
 
-        $credibility = $kbCompany['credibility_statement'] ?? 'SolidPro specialises in digital transformation for manufacturers.';
-        $companyName = $kbCompany['name'] ?? 'SolidPro';
+        $p  = "You are writing B2B cold outreach emails on behalf of {$senderName}, {$senderTitle} at {$companyName}.\n\n";
+        $p .= "=== ABOUT {$companyName} ===\n{$credibility}\n\n";
 
-        $serviceBlock = '';
         if ($service) {
-            $serviceBlock = "=== SERVICE BEING PITCHED ===\n"
+            $p .= "=== SERVICE BEING PITCHED ===\n"
                 . "Name: {$service['name']}\n"
                 . "Problem it solves: {$service['problem_statement']}\n"
                 . "What we deliver: {$service['outcomes']}\n"
-                . "Why we are different: {$service['differentiators']}\n";
+                . "Why we are different: {$service['differentiators']}\n\n";
         }
 
-        $personaBlock = '';
-        if ($persona) {
-            $personaBlock = "=== BUYER PERSONA ===\n"
-                . "Persona: {$persona['name']} — {$persona['title']}\n"
-                . ($persona['goals']       ? "Their goals: {$persona['goals']}\n"              : '')
-                . ($persona['pain_points'] ? "Their pain points: {$persona['pain_points']}\n"  : '')
-                . ($persona['email_hook']  ? "Best opening angle: {$persona['email_hook']}\n"  : '')
-                . ($persona['objections']  ? "Typical objections: {$persona['objections']}\n"  : '');
-        }
-
-        $toneBlock = '';
         if ($tone) {
-            $toneBlock = "=== TONE GUIDELINES ===\n"
+            $p .= "=== TONE GUIDELINES ===\n"
                 . "Voice: {$tone['tone_descriptors']}\n"
                 . "Never sound: {$tone['anti_tone']}\n"
                 . "Words to use: {$tone['words_always']}\n"
                 . "Words to avoid: {$tone['words_never']}\n"
                 . "Opening style: {$tone['email_opening_style']}\n"
-                . "CTA style: {$tone['cta_style']}\n";
+                . "CTA style: {$tone['cta_style']}\n\n";
         }
 
-        $touchBlock = '';
-        if ($touchNumber > 1) {
-            $touchBlock = "=== FOLLOW-UP CONTEXT ===\n"
-                . "This is touch #{$touchNumber}. The prior email subject was: \"{$priorSubject}\"\n"
-                . "Do NOT repeat the same opening hook. Reference the previous outreach briefly and add new value.\n";
-        }
-
-        $prompt = "You are writing a B2B cold outreach email on behalf of {$senderName}, {$senderTitle} at {$companyName}.\n\n"
-            . "=== ABOUT {$companyName} ===\n{$credibility}\n\n"
-            . $serviceBlock . "\n"
-            . $personaBlock . "\n"
-            . "=== TARGET COMPANY ===\n"
-            . "Company: {$company['name']}\n"
-            . "Industry: " . ($company['industry'] ?? 'Manufacturing') . "\n"
-            . "Country: " . ($company['country'] ?? 'US') . "\n"
-            . "Detected signals: {$signalList}\n"
-            . "Top signal: " . ($scoreData['top_signal'] ?? 'business activity') . "\n"
-            . "Detected tech stack: {$techTools}\n"
-            . "Intent score: " . ($scoreData['score'] ?? 0) . "/100\n\n"
-            . $toneBlock . "\n"
-            . "=== SENDER ===\n"
+        $p .= "=== SENDER ===\n"
             . "From: {$senderName}, {$senderTitle}\n"
             . ($senderStyle    ? "Writing style: {$senderStyle}\n"   : '')
-            . ($senderClosing  ? "Closing style: {$senderClosing}\n" : '')
+            . ($senderClosing  ? "Closing style: {$senderClosing}\n"  : '')
             . ($senderCalendar ? "Calendar link for CTA: {$senderCalendar}\n" : '')
-            . ($senderSig      ? "Signature: {$senderSig}\n"         : '') . "\n"
-            . $touchBlock . "\n"
-            . "=== INSTRUCTIONS ===\n"
-            . "Email length: {$length} (short = 3-4 sentences, medium = 2 short paragraphs, long = 3 paragraphs)\n"
-            . "Write a professional cold email.\n"
-            . "Use [First Name] as the only placeholder.\n"
-            . "Output format: exactly two lines followed by the body:\n"
-            . "SUBJECT: <subject line here>\n"
-            . "BODY:\n<email body here>\n"
-            . ($customInstructions ? "\nAdditional instructions: {$customInstructions}\n" : '');
+            . ($senderSig      ? "Signature: {$senderSig}\n"         : '') . "\n";
 
-        return $prompt;
+        $p .= "=== OUTPUT FORMAT ===\n"
+            . "Always output exactly:\nSUBJECT: <subject line>\nBODY:\n<email body>\n"
+            . "Use [First Name] as the only placeholder.\n";
+
+        $custom = $aiSettings['custom_instructions'] ?? '';
+        if ($custom) $p .= "\nAdditional instructions: {$custom}\n";
+
+        return $p;
+    }
+
+    // --- Dynamic per-company context (changes per company and per touch) ---
+    private static function buildUserMessage($company, $scoreData, $techStack, $touchNumber, $priorSubject, $persona, $aiSettings) {
+        $techTools  = $techStack ? implode(', ', array_column($techStack, 'tool')) : 'Not detected';
+        $signalList = $scoreData['signal_types'] ? implode(', ', $scoreData['signal_types']) : 'General';
+        $length     = $aiSettings['email_length'] ?? 'medium';
+
+        $msg  = "=== TARGET COMPANY ===\n"
+              . "Company: {$company['name']}\n"
+              . "Industry: " . ($company['industry'] ?? 'Manufacturing') . "\n"
+              . "Country: " . ($company['country'] ?? 'US') . "\n"
+              . "Detected signals: {$signalList}\n"
+              . "Top signal: " . ($scoreData['top_signal'] ?? 'business activity') . "\n"
+              . "Detected tech stack: {$techTools}\n"
+              . "Intent score: " . ($scoreData['score'] ?? 0) . "/100\n\n";
+
+        if ($persona) {
+            $msg .= "=== BUYER PERSONA ===\n"
+                . "{$persona['name']} — {$persona['title']}\n"
+                . (!empty($persona['goals'])       ? "Their goals: {$persona['goals']}\n"             : '')
+                . (!empty($persona['pain_points']) ? "Their pain points: {$persona['pain_points']}\n" : '')
+                . (!empty($persona['email_hook'])  ? "Best opening angle: {$persona['email_hook']}\n" : '')
+                . (!empty($persona['objections'])  ? "Typical objections: {$persona['objections']}\n" : '')
+                . "\n";
+        }
+
+        if ($touchNumber > 1 && $priorSubject) {
+            $msg .= "=== FOLLOW-UP CONTEXT ===\n"
+                . "This is touch #{$touchNumber}. Prior email subject: \"{$priorSubject}\"\n"
+                . "Do NOT repeat the same opening hook. Reference previous outreach briefly, add new value.\n\n";
+        }
+
+        $msg .= "Write a {$length} cold email. Length guide: short = 3-4 sentences, medium = 2 short paragraphs, long = 3 paragraphs.\n";
+        return $msg;
+    }
+
+    // Flatten messages array into a readable string (for Gemini which uses a single prompt)
+    private static function flattenMessages($messages) {
+        $out = '';
+        foreach ($messages as $m) {
+            $label = $m['role'] === 'assistant' ? 'Prior email written' : 'New task';
+            $out  .= "--- {$label} ---\n{$m['content']}\n\n";
+        }
+        return trim($out);
     }
 
     private static function parseResponse($raw) {
         $raw     = trim($raw);
         $subject = '';
         $body    = $raw;
-
-        if (preg_match('/^SUBJECT:\s*(.+)/im', $raw, $m)) {
-            $subject = trim($m[1]);
-        }
+        if (preg_match('/^SUBJECT:\s*(.+)/im', $raw, $m)) $subject = trim($m[1]);
         if (preg_match('/^BODY:\s*([\s\S]+)/im', $raw, $m)) {
             $body = trim($m[1]);
         } elseif ($subject) {
-            $body = preg_replace('/^SUBJECT:\s*.+\n?/im', '', $raw);
-            $body = trim($body);
+            $body = trim(preg_replace('/^SUBJECT:\s*.+\n?/im', '', $raw));
         }
-
         return array('subject' => $subject, 'body' => $body);
     }
 
@@ -173,18 +205,27 @@ class AIEmailDrafter {
         return $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
     }
 
-    private static function callClaude($prompt, $key, $model) {
-        $model = $model ?: 'claude-haiku-4-5-20251001';
-        $url   = 'https://api.anthropic.com/v1/messages';
-        $payload = json_encode(array(
+    private static function callClaude($messages, $systemPrompt, $key, $model) {
+        $model   = $model ?: 'claude-haiku-4-5-20251001';
+        $url     = 'https://api.anthropic.com/v1/messages';
+        $payload = array(
             'model'      => $model,
             'max_tokens' => 1024,
-            'messages'   => array(array('role' => 'user', 'content' => $prompt)),
-        ));
+            'messages'   => $messages,
+        );
+        if ($systemPrompt) {
+            // cache_control marks this block for server-side prompt caching (~70% token savings on repeated calls)
+            $payload['system'] = array(
+                array('type' => 'text', 'text' => $systemPrompt, 'cache_control' => array('type' => 'ephemeral'))
+            );
+        }
         $ctx = stream_context_create(array('http' => array(
             'method'  => 'POST',
-            'header'  => "Content-Type: application/json\r\nx-api-key: {$key}\r\nanthropic-version: 2023-06-01\r\n",
-            'content' => $payload,
+            'header'  => "Content-Type: application/json\r\n"
+                       . "x-api-key: {$key}\r\n"
+                       . "anthropic-version: 2023-06-01\r\n"
+                       . "anthropic-beta: prompt-caching-2024-07-31\r\n",
+            'content' => json_encode($payload),
             'timeout' => 30,
         )));
         $raw  = @file_get_contents($url, false, $ctx);
@@ -193,12 +234,15 @@ class AIEmailDrafter {
         return $data['content'][0]['text'] ?? '';
     }
 
-    private static function callOpenAI($prompt, $key, $model) {
-        $model = $model ?: 'gpt-4o-mini';
-        $url   = 'https://api.openai.com/v1/chat/completions';
+    private static function callOpenAI($messages, $systemPrompt, $key, $model) {
+        $model       = $model ?: 'gpt-4o-mini';
+        $url         = 'https://api.openai.com/v1/chat/completions';
+        $allMessages = array();
+        if ($systemPrompt) $allMessages[] = array('role' => 'system', 'content' => $systemPrompt);
+        foreach ($messages as $m) $allMessages[] = $m;
         $payload = json_encode(array(
             'model'       => $model,
-            'messages'    => array(array('role' => 'user', 'content' => $prompt)),
+            'messages'    => $allMessages,
             'max_tokens'  => 1024,
             'temperature' => 0.7,
         ));

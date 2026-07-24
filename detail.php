@@ -11,7 +11,6 @@ if (!$company) { header('Location: companies.php'); exit; }
 $signals = DB::fetchAll('SELECT * FROM signals WHERE company_id = ? ORDER BY created_at DESC', array($id));
 $tech    = DB::fetchAll('SELECT * FROM company_tech WHERE company_id = ? ORDER BY confidence DESC', array($id));
 
-// ORDER BY id only — touch_number column may not exist if migration hasn't run
 try {
     $emails = DB::fetchAll('SELECT * FROM email_drafts WHERE company_id = ? ORDER BY id ASC', array($id));
 } catch (Exception $e) {
@@ -113,6 +112,7 @@ include 'layout.php';
 <?php if ($emails): ?>
 <div style="margin-bottom:24px">
   <?php foreach ($emails as $em): ?>
+  <?php $emailStatus = $em['status'] ?? 'draft'; ?>
   <div class="card" style="margin-bottom:16px" id="emailCard<?= $em['id'] ?>">
     <div style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
       <div style="display:flex;align-items:center;gap:10px">
@@ -123,11 +123,22 @@ include 'layout.php';
         <?php if (!empty($em['matched_service_id']) && $matchedService): ?>
         <span style="font-size:11px;color:var(--muted)">&#8227; <?= htmlspecialchars($matchedService['name']) ?><?php if($matchedService['vertical_name']): ?> &middot; <?= htmlspecialchars($matchedService['vertical_name']) ?><?php endif; ?></span>
         <?php endif; ?>
+        <!-- Status badge -->
+        <?php if ($emailStatus === 'sent'): ?>
+        <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;background:rgba(34,197,94,0.12);color:var(--success)">&#10003; Sent</span>
+        <?php elseif ($emailStatus === 'replied'): ?>
+        <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;background:rgba(99,102,241,0.15);color:#818cf8">&#8617; Replied</span>
+        <?php endif; ?>
       </div>
-      <div style="display:flex;align-items:center;gap:8px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span style="font-size:11px;color:var(--muted)"><?= date('d M Y', strtotime($em['created_at'])) ?></span>
         <button onclick="copyEmail(<?= $em['id'] ?>)" class="btn btn-secondary btn-sm">&#128203; Copy</button>
         <a href="mailto:?subject=<?= urlencode($em['subject']) ?>&body=<?= urlencode($em['body']) ?>" class="btn btn-ghost btn-sm">&#128232; Open in Mail</a>
+        <?php if ($emailStatus === 'draft'): ?>
+        <button onclick="markEmail(<?= $em['id'] ?>, 'sent')" class="btn btn-ghost btn-sm" style="color:var(--success)">&#10003; Mark Sent</button>
+        <?php elseif ($emailStatus === 'sent'): ?>
+        <button onclick="markEmail(<?= $em['id'] ?>, 'replied')" class="btn btn-ghost btn-sm">&#8617; Mark Replied</button>
+        <?php endif; ?>
       </div>
     </div>
     <div style="padding:16px 20px;display:grid;grid-template-columns:1fr 1fr;gap:20px">
@@ -270,6 +281,16 @@ function togglePasteBox() {
   box.style.display = box.style.display === 'none' ? 'block' : 'none';
 }
 
+async function markEmail(id, status) {
+  var fd = new FormData();
+  fd.append('id', id);
+  fd.append('status', status);
+  try {
+    await fetch('api/email.php', {method:'POST', body:fd});
+    location.reload();
+  } catch(e) { alert('Failed to update status: ' + e.message); }
+}
+
 async function extractFromPaste() {
   var text = document.getElementById('pasteText').value.trim();
   if (!text) { alert('Please paste a job description first'); return; }
@@ -307,7 +328,7 @@ async function enrichNow() {
   var btn = document.getElementById('enrichBtn');
   btn.textContent = 'Enriching...';
   btn.disabled = true;
-  showEnrichStatus('<span style="color:var(--muted)">Fetching signals... this may take 15-20 seconds.</span>', false);
+  showEnrichStatus('<span style="color:var(--muted)">Fetching signals... this may take 15-30 seconds.</span>', false);
   try {
     var r = await fetch('api/enrich.php?id=' + companyId, {method:'POST'});
     var text = await r.text();
@@ -317,7 +338,10 @@ async function enrichNow() {
       btn.textContent = '&#9889; Re-Enrich'; btn.disabled = false; return;
     }
     if (d.ok) {
-      showEnrichStatus('&#10003; Enriched! Score: <strong>' + d.score + '</strong> (' + d.priority + '). News: ' + d.news_count + ', Jobs: ' + d.jobs_count + ', Tech: ' + d.tech_found + '. Reloading...', false);
+      var msg = '&#10003; Enriched! Score: <strong>' + d.score + '</strong> (' + d.priority + '). News: ' + d.news_count + ', Jobs: ' + d.jobs_count + ', Tech: ' + d.tech_found;
+      if (d.email_generated) msg += ' &middot; &#10024; Email auto-generated';
+      msg += '. Reloading...';
+      showEnrichStatus(msg, false);
       setTimeout(function(){ location.reload(); }, 2200);
     } else {
       showEnrichStatus('Error: ' + (d.error || 'unknown error'), true);
@@ -353,7 +377,6 @@ async function generateEmail(touchNumber) {
     if (d.ok) {
       var msg = '&#10003; Touch #' + d.touch_number + ' generated via ' + d.provider.toUpperCase();
       if (d.matched_service) msg += ' &middot; Service: ' + d.matched_service;
-      if (d.persona) msg += ' &middot; Persona: ' + d.persona;
       msg += '. Reloading...';
       if (status) status.innerHTML = '<span style="color:var(--success)">' + msg + '</span>';
       if (statusTop) { statusTop.style.background='rgba(34,197,94,0.1)'; statusTop.style.border='1px solid rgba(34,197,94,0.4)'; statusTop.style.color='#22c55e'; statusTop.innerHTML=msg; }
