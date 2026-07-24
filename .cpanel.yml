@@ -3,3 +3,5 @@ deployment:
   tasks:
     - export DEPLOYPATH=/home1/de2shrnx/intel.easi7.in
     - rsync -av --exclude='.git' --exclude='config.local.php' . $DEPLOYPATH/
+    - find $DEPLOYPATH -type d -exec chmod 755 {} \;
+    - find $DEPLOYPATH -type f -name "*.php" -exec chmod 644 {} \;
