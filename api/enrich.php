@@ -5,9 +5,6 @@ require_once __DIR__ . '/../lib/DB.php';
 require_once __DIR__ . '/../lib/NewsFetcher.php';
 require_once __DIR__ . '/../lib/TechExtractor.php';
 require_once __DIR__ . '/../lib/Scorer.php';
-require_once __DIR__ . '/../lib/EmailDrafter.php';
-require_once __DIR__ . '/../lib/KBMatcher.php';
-require_once __DIR__ . '/../lib/AIEmailDrafter.php';
 
 try {
     $id = (int)($_POST['id'] ?? $_GET['id'] ?? 0);
@@ -63,67 +60,13 @@ try {
         'status'       => 'enriched',
     ), 'id = ?', array($id));
 
-    $service    = KBMatcher::matchService($scoreData['signal_types'], $techStack, $company['industry']);
-    $aiSettings = DB::fetchOne('SELECT * FROM ai_settings LIMIT 1') ?: array();
-    $tone       = DB::fetchOne('SELECT * FROM kb_tone LIMIT 1');
-    $sender     = DB::fetchOne('SELECT * FROM kb_senders WHERE is_default=1 LIMIT 1');
-    if (!$sender) $sender = DB::fetchOne('SELECT * FROM kb_senders ORDER BY id LIMIT 1');
-
-    $persona = null;
-    if ($service) {
-        $persona = DB::fetchOne(
-            'SELECT * FROM kb_personas WHERE service_id = ? ORDER BY FIELD(decision_role,"Economic Buyer","Champion","Technical Buyer","End User","Influencer","Blocker") LIMIT 1',
-            array($service['id'])
-        );
-        if (!$persona && !empty($service['vertical_id'])) {
-            $persona = DB::fetchOne(
-                'SELECT * FROM kb_personas WHERE vertical_id = ? ORDER BY FIELD(decision_role,"Economic Buyer","Champion","Technical Buyer","End User","Influencer","Blocker") LIMIT 1',
-                array($service['vertical_id'])
-            );
-        }
-    }
-
-    $hasAiKey = (!empty($aiSettings['gemini_key']) && ($aiSettings['provider'] ?? '') === 'gemini')
-             || (!empty($aiSettings['claude_key'])  && ($aiSettings['provider'] ?? '') === 'claude')
-             || (!empty($aiSettings['openai_key'])  && ($aiSettings['provider'] ?? '') === 'openai');
-
-    DB::query('DELETE FROM email_drafts WHERE company_id = ?', array($id));
-
-    if ($hasAiKey) {
-        $email = AIEmailDrafter::draft($company, $scoreData, $techStack, $service, $sender, $tone, $aiSettings, 1, '', $persona);
-        DB::insert('email_drafts', array(
-            'company_id'         => $id,
-            'subject'            => $email['subject'],
-            'body'               => $email['body'],
-            'angle'              => $email['angle'],
-            'touch_number'       => 1,
-            'ai_provider'        => $email['provider'],
-            'matched_service_id' => $service ? $service['id'] : null,
-            'prompt_context'     => $email['prompt'],
-        ));
-    } else {
-        $email = EmailDrafter::draft($company, $scoreData, $techStack);
-        DB::insert('email_drafts', array(
-            'company_id'   => $id,
-            'subject'      => $email['subject'],
-            'body'         => $email['body'],
-            'angle'        => $email['angle'],
-            'touch_number' => 1,
-        ));
-    }
-
-    $adzunaActive = (ADZUNA_APP_ID && ADZUNA_APP_KEY);
     echo json_encode(array(
-        'ok'              => true,
-        'score'           => $scoreData['score'],
-        'priority'        => $scoreData['priority'],
-        'news_count'      => count($news),
-        'jobs_count'      => count($jobs),
-        'tech_found'      => count($techStack),
-        'adzuna_active'   => $adzunaActive,
-        'ai_used'         => $hasAiKey,
-        'matched_service' => $service ? $service['name'] : null,
-        'persona_used'    => $persona ? $persona['name'] : null,
+        'ok'         => true,
+        'score'      => $scoreData['score'],
+        'priority'   => $scoreData['priority'],
+        'news_count' => count($news),
+        'jobs_count' => count($jobs),
+        'tech_found' => count($techStack),
     ));
 
 } catch (Exception $e) {
