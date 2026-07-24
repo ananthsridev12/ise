@@ -29,7 +29,7 @@ try {
             } else {
                 DB::insert('kb_company', $fields);
             }
-            echo json_encode(array('ok' => true));
+            echo json_encode(array('ok' => true, 'message' => 'Company info saved.'));
             break;
 
         case 'save_vertical':
@@ -43,11 +43,9 @@ try {
                 'head_name'       => trim($_POST['head_name'] ?? ''),
                 'positioning'     => trim($_POST['positioning'] ?? ''),
             );
-            if ($id) {
-                DB::update('kb_verticals', $fields, 'id = ?', array($id));
-            } else {
-                DB::insert('kb_verticals', $fields);
-            }
+            if (!$fields['name']) { echo json_encode(array('ok'=>false,'error'=>'Name is required')); break; }
+            if ($id) { DB::update('kb_verticals', $fields, 'id = ?', array($id)); }
+            else { DB::insert('kb_verticals', $fields); }
             echo json_encode(array('ok' => true));
             break;
 
@@ -77,11 +75,9 @@ try {
                 'differentiators'   => trim($_POST['differentiators'] ?? ''),
                 'proof_points'      => trim($_POST['proof_points'] ?? ''),
             );
-            if ($id) {
-                DB::update('kb_services', $fields, 'id = ?', array($id));
-            } else {
-                DB::insert('kb_services', $fields);
-            }
+            if (!$fields['name']) { echo json_encode(array('ok'=>false,'error'=>'Name is required')); break; }
+            if ($id) { DB::update('kb_services', $fields, 'id = ?', array($id)); }
+            else { DB::insert('kb_services', $fields); }
             echo json_encode(array('ok' => true));
             break;
 
@@ -106,17 +102,47 @@ try {
                 'poor_fit'           => trim($_POST['poor_fit'] ?? ''),
                 'disqualifiers'      => trim($_POST['disqualifiers'] ?? ''),
             );
-            if ($id) {
-                DB::update('kb_icps', $fields, 'id = ?', array($id));
-            } else {
-                DB::insert('kb_icps', $fields);
-            }
+            if (!$fields['name']) { echo json_encode(array('ok'=>false,'error'=>'Name is required')); break; }
+            if ($id) { DB::update('kb_icps', $fields, 'id = ?', array($id)); }
+            else { DB::insert('kb_icps', $fields); }
             echo json_encode(array('ok' => true));
             break;
 
         case 'delete_icp':
             $id = (int)($_POST['id'] ?? 0);
             if ($id) DB::query('DELETE FROM kb_icps WHERE id = ?', array($id));
+            echo json_encode(array('ok' => true));
+            break;
+
+        case 'save_persona':
+            $id = (int)($_POST['id'] ?? 0);
+            $fields = array(
+                'name'                 => trim($_POST['name'] ?? ''),
+                'title'                => trim($_POST['title'] ?? ''),
+                'department'           => trim($_POST['department'] ?? ''),
+                'seniority'            => $_POST['seniority'] ?? 'Director',
+                'vertical_id'          => (int)($_POST['vertical_id'] ?? 0) ?: null,
+                'service_id'           => (int)($_POST['service_id'] ?? 0) ?: null,
+                'reporting_to'         => trim($_POST['reporting_to'] ?? ''),
+                'goals'                => trim($_POST['goals'] ?? ''),
+                'pain_points'          => trim($_POST['pain_points'] ?? ''),
+                'objections'           => trim($_POST['objections'] ?? ''),
+                'kpis'                 => trim($_POST['kpis'] ?? ''),
+                'decision_role'        => $_POST['decision_role'] ?? 'Champion',
+                'communication_style'  => trim($_POST['communication_style'] ?? ''),
+                'preferred_content'    => trim($_POST['preferred_content'] ?? ''),
+                'watering_holes'       => trim($_POST['watering_holes'] ?? ''),
+                'email_hook'           => trim($_POST['email_hook'] ?? ''),
+            );
+            if (!$fields['name']) { echo json_encode(array('ok'=>false,'error'=>'Persona name is required')); break; }
+            if ($id) { DB::update('kb_personas', $fields, 'id = ?', array($id)); }
+            else { DB::insert('kb_personas', $fields); }
+            echo json_encode(array('ok' => true));
+            break;
+
+        case 'delete_persona':
+            $id = (int)($_POST['id'] ?? 0);
+            if ($id) DB::query('DELETE FROM kb_personas WHERE id = ?', array($id));
             echo json_encode(array('ok' => true));
             break;
 
@@ -134,11 +160,8 @@ try {
                 'bad_example'         => trim($_POST['bad_example'] ?? ''),
             );
             $existing = DB::fetchOne('SELECT id FROM kb_tone LIMIT 1');
-            if ($existing) {
-                DB::update('kb_tone', $fields, 'id = ?', array($existing['id']));
-            } else {
-                DB::insert('kb_tone', $fields);
-            }
+            if ($existing) { DB::update('kb_tone', $fields, 'id = ?', array($existing['id'])); }
+            else { DB::insert('kb_tone', $fields); }
             echo json_encode(array('ok' => true));
             break;
 
@@ -159,16 +182,14 @@ try {
                 'calendar_link'       => trim($_POST['calendar_link'] ?? ''),
                 'signature'           => trim($_POST['signature'] ?? ''),
                 'example_emails'      => trim($_POST['example_emails'] ?? ''),
-                'is_default'          => isset($_POST['is_default']) ? 1 : 0,
+                'is_default'          => ($_POST['is_default'] ?? '0') === '1' ? 1 : 0,
             );
-            if ($id) {
-                DB::update('kb_senders', $fields, 'id = ?', array($id));
-            } else {
-                DB::insert('kb_senders', $fields);
-            }
+            if (!$fields['full_name']) { echo json_encode(array('ok'=>false,'error'=>'Full name is required')); break; }
+            if ($id) { DB::update('kb_senders', $fields, 'id = ?', array($id)); }
+            else { DB::insert('kb_senders', $fields); }
             if ($fields['is_default']) {
                 $newId = $id ?: DB::fetchOne('SELECT LAST_INSERT_ID() as lid')['lid'];
-                DB::query('UPDATE kb_senders SET is_default=0 WHERE id != ?', array($newId));
+                if ($newId) DB::query('UPDATE kb_senders SET is_default=0 WHERE id != ?', array($newId));
             }
             echo json_encode(array('ok' => true));
             break;
@@ -180,7 +201,7 @@ try {
             break;
 
         default:
-            echo json_encode(array('error' => 'Unknown action'));
+            echo json_encode(array('error' => 'Unknown action: ' . htmlspecialchars($action)));
     }
 
 } catch (Exception $e) {
