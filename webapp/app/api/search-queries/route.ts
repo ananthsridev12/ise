@@ -2,11 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { searchQueries } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
+import { getSession } from '@/lib/auth/session';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
-  const rows = await db.select().from(searchQueries).orderBy(searchQueries.queryId);
+export async function GET(req: NextRequest) {
+  const session = await getSession(req);
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const rows = await db.select().from(searchQueries).where(eq(searchQueries.tenantId, session.tenantId)).orderBy(searchQueries.queryId);
   return NextResponse.json(rows);
 }
 

@@ -114,6 +114,7 @@ export const searchQueries = sqliteTable('search_queries', {
   lastSuccess: text('last_success').default(''),
   remarks: text('remarks').default(''),
   sourceType: text('source_type').default('GoogleNews'),
+  tenantId: integer('tenant_id').default(1),
 });
 
 export const rawNews = sqliteTable('raw_news', {
@@ -203,6 +204,7 @@ export const actionQueue = sqliteTable('action_queue', {
   actionStatus: text('action_status').default('New'),
   owner: text('owner').default(''),
   notes: text('notes').default(''),
+  tenantId: integer('tenant_id').default(1),
 });
 
 export const pitchPlaybook = sqliteTable('pitch_playbook', {
@@ -242,6 +244,7 @@ export const outreachQueue = sqliteTable('outreach_queue', {
   outreachDate: text('outreach_date').default(''),
   followUpDate: text('follow_up_date').default(''),
   notes: text('notes').default(''),
+  tenantId: integer('tenant_id').default(1),
 });
 
 export const accountIntelligence = sqliteTable('account_intelligence', {
@@ -259,6 +262,7 @@ export const accountIntelligence = sqliteTable('account_intelligence', {
   outreachReady: text('outreach_ready').default('NO'),
   lastOutreachDate: text('last_outreach_date').default(''),
   notes: text('notes').default(''),
+  tenantId: integer('tenant_id').default(1),
 });
 
 export const targetAccounts = sqliteTable('target_accounts', {
@@ -270,4 +274,72 @@ export const targetAccounts = sqliteTable('target_accounts', {
   watchPriority: text('watch_priority').default('Medium'),
   autoSearch: integer('auto_search', { mode: 'boolean' }).default(false),
   notes: text('notes').default(''),
+  tenantId: integer('tenant_id').default(1),
+});
+
+// ── Auth & Multi-tenant ────────────────────────────────────────────────────
+
+export const tenants = sqliteTable('tenants', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  slug: text('slug').notNull().unique(),
+  active: integer('active', { mode: 'boolean' }).default(true),
+  createdAt: text('created_at').default(''),
+});
+
+export const users = sqliteTable('users', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  tenantId: integer('tenant_id').notNull(),
+  email: text('email').notNull().unique(),
+  passwordHash: text('password_hash').notNull(),
+  displayName: text('display_name').notNull().default(''),
+  role: text('role').notNull().default('member'), // 'admin' | 'member'
+  active: integer('active', { mode: 'boolean' }).default(true),
+  createdAt: text('created_at').default(''),
+});
+
+export const sessions = sqliteTable('sessions', {
+  token: text('token').primaryKey(),
+  userId: integer('user_id').notNull(),
+  tenantId: integer('tenant_id').notNull(),
+  expiresAt: text('expires_at').notNull(),
+  createdAt: text('created_at').default(''),
+});
+
+// ── Knowledge Hub (per-tenant) ─────────────────────────────────────────────
+
+export const kbVerticals = sqliteTable('kb_verticals', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  tenantId: integer('tenant_id').notNull(),
+  name: text('name').notNull(),
+  focus: text('focus').default(''),
+  industries: text('industries').default(''),
+  priority: text('priority').default('core'),
+  createdAt: text('created_at').default(''),
+});
+
+export const kbServices = sqliteTable('kb_services', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  tenantId: integer('tenant_id').notNull(),
+  verticalId: integer('vertical_id'),
+  name: text('name').notNull(),
+  description: text('description').default(''),
+  signalKeywords: text('signal_keywords').default(''),
+  signalTypes: text('signal_types').default(''),
+  techTriggers: text('tech_triggers').default(''),
+  createdAt: text('created_at').default(''),
+});
+
+// ── Member permission assignments ─────────────────────────────────────────
+
+export const userVerticals = sqliteTable('user_verticals', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: integer('user_id').notNull(),
+  verticalId: integer('vertical_id').notNull(),
+});
+
+export const userServices = sqliteTable('user_services', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: integer('user_id').notNull(),
+  serviceId: integer('service_id').notNull(),
 });

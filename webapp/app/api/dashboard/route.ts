@@ -1,12 +1,16 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { rawNews, processedNews, actionQueue, outreachQueue, accountIntelligence, syncLog, targetAccounts } from '@/lib/db/schema';
 import { eq, sql, desc } from 'drizzle-orm';
 import { todayString } from '@/lib/pipeline/utils';
+import { getSession } from '@/lib/auth/session';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const session = await getSession(req);
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   try {
     const today = todayString();
 

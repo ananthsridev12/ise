@@ -1,6 +1,8 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 
 const dbPath = path.join(process.cwd(), 'ise.db');
 
@@ -125,7 +127,71 @@ export function initDb() {
       industry TEXT DEFAULT '', icp_match TEXT DEFAULT '', watch_priority TEXT DEFAULT 'Medium',
       auto_search INTEGER DEFAULT 0, notes TEXT DEFAULT ''
     );
+
+    CREATE TABLE IF NOT EXISTS tenants (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE,
+      active INTEGER DEFAULT 1, created_at TEXT DEFAULT ''
+    );
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL, display_name TEXT NOT NULL DEFAULT '', role TEXT NOT NULL DEFAULT 'member',
+      active INTEGER DEFAULT 1, created_at TEXT DEFAULT ''
+    );
+    CREATE TABLE IF NOT EXISTS sessions (
+      token TEXT PRIMARY KEY, user_id INTEGER NOT NULL, tenant_id INTEGER NOT NULL,
+      expires_at TEXT NOT NULL, created_at TEXT DEFAULT ''
+    );
+    CREATE TABLE IF NOT EXISTS kb_verticals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL,
+      focus TEXT DEFAULT '', industries TEXT DEFAULT '', priority TEXT DEFAULT 'core',
+      created_at TEXT DEFAULT ''
+    );
+    CREATE TABLE IF NOT EXISTS kb_services (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, vertical_id INTEGER,
+      name TEXT NOT NULL, description TEXT DEFAULT '', signal_keywords TEXT DEFAULT '',
+      signal_types TEXT DEFAULT '', tech_triggers TEXT DEFAULT '', created_at TEXT DEFAULT ''
+    );
+    CREATE TABLE IF NOT EXISTS user_verticals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, vertical_id INTEGER NOT NULL,
+      UNIQUE(user_id, vertical_id)
+    );
+    CREATE TABLE IF NOT EXISTS user_services (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, service_id INTEGER NOT NULL,
+      UNIQUE(user_id, service_id)
+    );
   `);
+
+  // Add tenant_id to existing tables (safe on existing DBs)
+  const addCols = [
+    'ALTER TABLE target_accounts ADD COLUMN tenant_id INTEGER DEFAULT 1',
+    'ALTER TABLE outreach_queue ADD COLUMN tenant_id INTEGER DEFAULT 1',
+    'ALTER TABLE action_queue ADD COLUMN tenant_id INTEGER DEFAULT 1',
+    'ALTER TABLE account_intelligence ADD COLUMN tenant_id INTEGER DEFAULT 1',
+    'ALTER TABLE search_queries ADD COLUMN tenant_id INTEGER DEFAULT 1',
+  ];
+  for (const sql of addCols) {
+    try { sqlite.exec(sql); } catch (_) { /* column already exists */ }
+  }
+  // Back-fill existing rows to default tenant 1
+  const backfill = ['target_accounts', 'outreach_queue', 'action_queue', 'account_intelligence', 'search_queries'];
+  for (const tbl of backfill) {
+    try { sqlite.exec(`UPDATE ${tbl} SET tenant_id = 1 WHERE tenant_id IS NULL`); } catch (_) {}
+  }
+
+  // Seed default tenant if none exists
+  const tenantCount = (sqlite.prepare('SELECT COUNT(*) as c FROM tenants').get() as any).c;
+  if (tenantCount === 0) {
+    const now = new Date().toISOString();
+    sqlite.prepare(
+      "INSERT INTO tenants (name, slug, active, created_at) VALUES (?, ?, 1, ?)"
+    ).run('SolidPro', 'solidpro', now);
+
+    const tenantId = (sqlite.prepare('SELECT id FROM tenants WHERE slug = ?').get('solidpro') as any).id;
+    const hash = bcrypt.hashSync('admin123', 10);
+    sqlite.prepare(
+      "INSERT INTO users (tenant_id, email, password_hash, display_name, role, active, created_at) VALUES (?, ?, ?, ?, ?, 1, ?)"
+    ).run(tenantId, 'admin@solidpro.com', hash, 'Admin', 'admin', now);
+  }
 
   sqlite.close();
 }
