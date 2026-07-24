@@ -1,5 +1,4 @@
 <?php
-// Suppress any stray output from config.local.php (stray ?>, BOM, whitespace, etc.)
 ob_start();
 if (file_exists(__DIR__ . '/config.local.php')) {
     require_once __DIR__ . '/config.local.php';
