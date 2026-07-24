@@ -193,7 +193,7 @@ $services  = DB::fetchAll('SELECT id, name FROM kb_services ORDER BY name');
     <div class="form-group"><label>Trigger Events * <span style="color:var(--muted);font-size:11px">(what makes them a good prospect now)</span></label><textarea name="trigger_events" id="icp_trigger_events" rows="2" required placeholder="M&amp;A activity, system end-of-life, new CIO hire, IPO..."></textarea></div>
     <div class="form-group"><label>Perfect Fit Signals</label><textarea name="perfect_fit" id="icp_perfect_fit" rows="2" placeholder="What makes them an ideal customer"></textarea></div>
     <div class="form-group"><label>Poor Fit / Disqualifiers</label><textarea name="disqualifiers" id="icp_disqualifiers" rows="2" placeholder="Too small, wrong tech, recent implementation..."></textarea></div>
-    <div class="form-group"><label>Buying Process Notes</label><textarea name="poor_fit" id="icp_buying_process" rows="2" placeholder="Typical deal length, committee size, budget cycle..."></textarea></div>
+    <div class="form-group"><label>Buying Process Notes</label><textarea name="buying_process" id="icp_buying_process" rows="2" placeholder="Typical deal length, committee size, budget cycle..."></textarea></div>
     <div style="display:flex;gap:8px">
       <button type="button" onclick="kbSave('save_icp','icpForm',this)" class="btn btn-primary">Save ICP</button>
       <button type="button" onclick="clearIcpForm()" class="btn btn-secondary">Clear</button>
@@ -537,10 +537,11 @@ function editICP(icp) {
   document.getElementById('icp_trigger_events').value = icp.trigger_events||'';
   document.getElementById('icp_perfect_fit').value = icp.perfect_fit||'';
   document.getElementById('icp_disqualifiers').value = icp.disqualifiers||'';
+  document.getElementById('icp_buying_process').value = icp.buying_process||'';
   window.scrollTo(0,0);
 }
 function clearIcpForm() {
-  ['icp_id','icp_name','icp_size_range','icp_revenue_range','icp_industries','icp_geographies','icp_tech_stack_signals','icp_trigger_events','icp_perfect_fit','icp_disqualifiers'].forEach(function(id){ document.getElementById(id).value=''; });
+  ['icp_id','icp_name','icp_size_range','icp_revenue_range','icp_industries','icp_geographies','icp_tech_stack_signals','icp_trigger_events','icp_perfect_fit','icp_disqualifiers','icp_buying_process'].forEach(function(id){ document.getElementById(id).value=''; });
   document.getElementById('icp_vertical_id').value='';
   document.getElementById('icp_service_id').value='';
 }

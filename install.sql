@@ -116,6 +116,7 @@ CREATE TABLE IF NOT EXISTS `kb_icps` (
   `vertical_id`        INT,
   `service_id`         INT,
   `size_range`         VARCHAR(255),
+  `revenue_range`      VARCHAR(255),
   `industries`         TEXT,
   `geographies`        TEXT,
   `tech_stack_signals` TEXT,
@@ -123,6 +124,7 @@ CREATE TABLE IF NOT EXISTS `kb_icps` (
   `perfect_fit`        TEXT,
   `poor_fit`           TEXT,
   `disqualifiers`      TEXT,
+  `buying_process`     TEXT,
   `created_at`         DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (`vertical_id`) REFERENCES `kb_verticals`(`id`) ON DELETE SET NULL,
   FOREIGN KEY (`service_id`) REFERENCES `kb_services`(`id`) ON DELETE SET NULL

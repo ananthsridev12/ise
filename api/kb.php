@@ -94,13 +94,14 @@ try {
                 'vertical_id'        => (int)($_POST['vertical_id'] ?? 0) ?: null,
                 'service_id'         => (int)($_POST['service_id'] ?? 0) ?: null,
                 'size_range'         => trim($_POST['size_range'] ?? ''),
+                'revenue_range'      => trim($_POST['revenue_range'] ?? ''),
                 'industries'         => trim($_POST['industries'] ?? ''),
                 'geographies'        => trim($_POST['geographies'] ?? ''),
                 'tech_stack_signals' => trim($_POST['tech_stack_signals'] ?? ''),
                 'trigger_events'     => trim($_POST['trigger_events'] ?? ''),
                 'perfect_fit'        => trim($_POST['perfect_fit'] ?? ''),
-                'poor_fit'           => trim($_POST['poor_fit'] ?? ''),
                 'disqualifiers'      => trim($_POST['disqualifiers'] ?? ''),
+                'buying_process'     => trim($_POST['buying_process'] ?? ''),
             );
             if (!$fields['name']) { echo json_encode(array('ok'=>false,'error'=>'Name is required')); break; }
             if ($id) { DB::update('kb_icps', $fields, 'id = ?', array($id)); }
