@@ -103,7 +103,39 @@ include 'layout.php';
     </div>
   </div>
 
-  <button type="submit" class="btn btn-primary">Save Settings</button>
+  <button type="submit" class="btn btn-primary" style="margin-bottom:20px">Save Settings</button>
 </form>
+
+<div class="card" style="max-width:720px;margin-bottom:20px">
+  <div style="padding:16px 20px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600">Test AI Connection</div>
+  <div style="padding:20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+    <button type="button" onclick="testAIConnection(this)" class="btn btn-secondary">&#9654; Test Connection</button>
+    <div id="testResult" style="font-size:13px"></div>
+  </div>
+</div>
+
+<script>
+async function testAIConnection(btn) {
+  var origText = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Testing...';
+  var res = document.getElementById('testResult');
+  res.textContent = '';
+  try {
+    var r = await fetch('api/test_ai.php');
+    var d = await r.json();
+    if (d.ok) {
+      res.style.color = 'var(--success)';
+      res.textContent = '✓ ' + d.provider + ': ' + d.response;
+    } else {
+      res.style.color = 'var(--danger)';
+      res.textContent = '✗ ' + (d.error || 'Connection failed.');
+    }
+  } catch(e) {
+    res.style.color = 'var(--danger)';
+    res.textContent = '✗ Network error: ' + e.message;
+  }
+  btn.disabled = false; btn.textContent = origText;
+}
+</script>
 
 <?php include 'layout_end.php'; ?>

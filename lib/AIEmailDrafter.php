@@ -1,8 +1,8 @@
 <?php
 class AIEmailDrafter {
 
-    public static function draft($company, $scoreData, $techStack, $service, $sender, $tone, $aiSettings, $touchNumber = 1, $priorSubject = '') {
-        $prompt = self::buildPrompt($company, $scoreData, $techStack, $service, $sender, $tone, $aiSettings, $touchNumber, $priorSubject);
+    public static function draft($company, $scoreData, $techStack, $service, $sender, $tone, $aiSettings, $touchNumber = 1, $priorSubject = '', $persona = null) {
+        $prompt = self::buildPrompt($company, $scoreData, $techStack, $service, $sender, $tone, $aiSettings, $touchNumber, $priorSubject, $persona);
 
         $provider = $aiSettings['provider'] ?? 'gemini';
         $raw = '';
@@ -29,7 +29,28 @@ class AIEmailDrafter {
         );
     }
 
-    private static function buildPrompt($company, $scoreData, $techStack, $service, $sender, $tone, $aiSettings, $touchNumber, $priorSubject) {
+    public static function testConnection($aiSettings): array {
+        $provider = $aiSettings['provider'] ?? 'gemini';
+        $prompt   = 'Respond with exactly the text: Connection successful.';
+        $raw = '';
+        if ($provider === 'gemini' && !empty($aiSettings['gemini_key'])) {
+            $raw = self::callGemini($prompt, $aiSettings['gemini_key'], $aiSettings['model'] ?? '');
+        } elseif ($provider === 'claude' && !empty($aiSettings['claude_key'])) {
+            $raw = self::callClaude($prompt, $aiSettings['claude_key'], $aiSettings['model'] ?? '');
+        } elseif ($provider === 'openai' && !empty($aiSettings['openai_key'])) {
+            $raw = self::callOpenAI($prompt, $aiSettings['openai_key'], $aiSettings['model'] ?? '');
+        }
+        if (!$raw) {
+            $keyField = $provider . '_key';
+            if (empty($aiSettings[$keyField])) {
+                return array('ok'=>false,'error'=>"No {$provider} API key saved.");
+            }
+            return array('ok'=>false,'error'=>"No response from {$provider}. Check the API key.");
+        }
+        return array('ok'=>true,'provider'=>$provider,'response'=>trim($raw));
+    }
+
+    private static function buildPrompt($company, $scoreData, $techStack, $service, $sender, $tone, $aiSettings, $touchNumber, $priorSubject, $persona = null) {
         $kbCompany  = DB::fetchOne('SELECT * FROM kb_company LIMIT 1') ?: array();
         $techTools  = $techStack ? implode(', ', array_column($techStack, 'tool')) : 'Not detected';
         $signalList = $scoreData['signal_types'] ? implode(', ', $scoreData['signal_types']) : 'General';
@@ -55,6 +76,16 @@ class AIEmailDrafter {
                 . "Why we are different: {$service['differentiators']}\n";
         }
 
+        $personaBlock = '';
+        if ($persona) {
+            $personaBlock = "=== BUYER PERSONA ===\n"
+                . "Persona: {$persona['name']} — {$persona['title']}\n"
+                . ($persona['goals']       ? "Their goals: {$persona['goals']}\n"              : '')
+                . ($persona['pain_points'] ? "Their pain points: {$persona['pain_points']}\n"  : '')
+                . ($persona['email_hook']  ? "Best opening angle: {$persona['email_hook']}\n"  : '')
+                . ($persona['objections']  ? "Typical objections: {$persona['objections']}\n"  : '');
+        }
+
         $toneBlock = '';
         if ($tone) {
             $toneBlock = "=== TONE GUIDELINES ===\n"
@@ -76,6 +107,7 @@ class AIEmailDrafter {
         $prompt = "You are writing a B2B cold outreach email on behalf of {$senderName}, {$senderTitle} at {$companyName}.\n\n"
             . "=== ABOUT {$companyName} ===\n{$credibility}\n\n"
             . $serviceBlock . "\n"
+            . $personaBlock . "\n"
             . "=== TARGET COMPANY ===\n"
             . "Company: {$company['name']}\n"
             . "Industry: " . ($company['industry'] ?? 'Manufacturing') . "\n"
@@ -87,10 +119,10 @@ class AIEmailDrafter {
             . $toneBlock . "\n"
             . "=== SENDER ===\n"
             . "From: {$senderName}, {$senderTitle}\n"
-            . ($senderStyle   ? "Writing style: {$senderStyle}\n"  : '')
-            . ($senderClosing ? "Closing style: {$senderClosing}\n" : '')
+            . ($senderStyle    ? "Writing style: {$senderStyle}\n"   : '')
+            . ($senderClosing  ? "Closing style: {$senderClosing}\n" : '')
             . ($senderCalendar ? "Calendar link for CTA: {$senderCalendar}\n" : '')
-            . ($senderSig    ? "Signature: {$senderSig}\n"         : '') . "\n"
+            . ($senderSig      ? "Signature: {$senderSig}\n"         : '') . "\n"
             . $touchBlock . "\n"
             . "=== INSTRUCTIONS ===\n"
             . "Email length: {$length} (short = 3-4 sentences, medium = 2 short paragraphs, long = 3 paragraphs)\n"

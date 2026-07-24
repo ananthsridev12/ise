@@ -19,11 +19,9 @@ try {
     $tone       = DB::fetchOne('SELECT * FROM kb_tone LIMIT 1');
 
     $sender = null;
-    if ($senderId) {
-        $sender = DB::fetchOne('SELECT * FROM kb_senders WHERE id = ?', array($senderId));
-    }
-    if (!$sender) $sender = DB::fetchOne('SELECT * FROM kb_senders WHERE is_default = 1 LIMIT 1');
-    if (!$sender) $sender = DB::fetchOne('SELECT * FROM kb_senders ORDER BY id LIMIT 1');
+    if ($senderId) $sender = DB::fetchOne('SELECT * FROM kb_senders WHERE id = ?', array($senderId));
+    if (!$sender)  $sender = DB::fetchOne('SELECT * FROM kb_senders WHERE is_default = 1 LIMIT 1');
+    if (!$sender)  $sender = DB::fetchOne('SELECT * FROM kb_senders ORDER BY id LIMIT 1');
 
     $techStack = DB::fetchAll('SELECT * FROM company_tech WHERE company_id = ? ORDER BY confidence DESC', array($companyId)) ?: array();
 
@@ -42,6 +40,20 @@ try {
 
     $service = KBMatcher::matchService($signalTypes, $techStack, $company['industry']);
 
+    $persona = null;
+    if ($service) {
+        $persona = DB::fetchOne(
+            'SELECT * FROM kb_personas WHERE service_id = ? ORDER BY FIELD(decision_role,"Economic Buyer","Champion","Technical Buyer","End User","Influencer","Blocker") LIMIT 1',
+            array($service['id'])
+        );
+        if (!$persona && !empty($service['vertical_id'])) {
+            $persona = DB::fetchOne(
+                'SELECT * FROM kb_personas WHERE vertical_id = ? ORDER BY FIELD(decision_role,"Economic Buyer","Champion","Technical Buyer","End User","Influencer","Blocker") LIMIT 1',
+                array($service['vertical_id'])
+            );
+        }
+    }
+
     $priorSubject = '';
     if ($touchNumber > 1) {
         $prior = DB::fetchOne(
@@ -51,7 +63,7 @@ try {
         $priorSubject = $prior ? $prior['subject'] : '';
     }
 
-    $email = AIEmailDrafter::draft($company, $scoreData, $techStack, $service, $sender, $tone, $aiSettings, $touchNumber, $priorSubject);
+    $email = AIEmailDrafter::draft($company, $scoreData, $techStack, $service, $sender, $tone, $aiSettings, $touchNumber, $priorSubject, $persona);
 
     DB::insert('email_drafts', array(
         'company_id'         => $companyId,
@@ -70,6 +82,7 @@ try {
         'body'            => $email['body'],
         'provider'        => $email['provider'],
         'matched_service' => $service ? $service['name'] : null,
+        'persona'         => $persona ? $persona['name'] : null,
         'touch_number'    => $touchNumber,
     ));
 
