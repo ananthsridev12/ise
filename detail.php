@@ -11,14 +11,16 @@ if (!$company) { header('Location: companies.php'); exit; }
 $signals  = DB::fetchAll('SELECT * FROM signals WHERE company_id = ? ORDER BY created_at DESC', array($id));
 $tech     = DB::fetchAll('SELECT * FROM company_tech WHERE company_id = ? ORDER BY confidence DESC', array($id));
 $emails   = DB::fetchAll('SELECT * FROM email_drafts WHERE company_id = ? ORDER BY touch_number ASC, id ASC', array($id));
-$email    = $emails ? $emails[0] : null;
 
 $matchedService = null;
-if ($email && !empty($email['matched_service_id'])) {
-    $matchedService = DB::fetchOne(
-        'SELECT s.*, v.name as vertical_name FROM kb_services s LEFT JOIN kb_verticals v ON s.vertical_id=v.id WHERE s.id=?',
-        array($email['matched_service_id'])
-    );
+foreach ($emails as $em) {
+    if (!empty($em['matched_service_id'])) {
+        $matchedService = DB::fetchOne(
+            'SELECT s.*, v.name as vertical_name FROM kb_services s LEFT JOIN kb_verticals v ON s.vertical_id=v.id WHERE s.id=?',
+            array($em['matched_service_id'])
+        );
+        if ($matchedService) break;
+    }
 }
 
 $priority  = strtolower($company['priority'] ?? 'low');
@@ -31,6 +33,10 @@ foreach ($tech as $t) {
 }
 
 $scoreColor = $priority === 'high' ? 'var(--success)' : ($priority === 'medium' ? 'var(--warning)' : 'var(--muted)');
+
+$maxTouch = 0;
+foreach ($emails as $em) { if (($em['touch_number'] ?? 1) > $maxTouch) $maxTouch = $em['touch_number'] ?? 1; }
+$nextTouch = $maxTouch + 1;
 
 $currentPage = 'companies';
 include 'layout.php';
@@ -46,11 +52,9 @@ include 'layout.php';
       <?php if ($company['url']): ?> &middot; <a href="<?= htmlspecialchars($company['url']) ?>" target="_blank" style="color:var(--muted)"><?= htmlspecialchars($company['url']) ?></a><?php endif; ?>
     </div>
   </div>
-  <div style="display:flex;gap:10px;align-items:center">
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
     <button onclick="enrichNow()" class="btn btn-secondary" id="enrichBtn">&#9889; Re-Enrich</button>
-    <?php if ($email): ?>
-    <a href="outreach.php?company=<?= $id ?>" class="btn btn-primary">&#9993; View All Emails</a>
-    <?php endif; ?>
+    <button onclick="generateEmail(<?= $nextTouch ?>)" class="btn btn-primary" id="genBtnTop">&#10024; <?= $emails ? 'Generate Touch #'.$nextTouch : 'Generate Email' ?></button>
   </div>
 </div>
 
@@ -88,13 +92,69 @@ include 'layout.php';
       <div style="font-size:11px;color:var(--muted)"><?= htmlspecialchars($matchedService['vertical_name']) ?></div>
       <?php endif; ?>
       <?php else: ?>
-      <div style="font-size:13px;color:var(--muted);margin-top:4px">&mdash;</div>
+      <div style="font-size:13px;color:var(--muted);margin-top:4px">&mdash; not matched</div>
       <?php endif; ?>
     </div>
   </div>
 </div>
 
 <div id="enrichStatus" style="display:none;margin-bottom:16px" class="card card-body"></div>
+<div id="genStatusTop" style="display:none;margin-bottom:16px;padding:12px 18px;border-radius:8px;font-size:13px"></div>
+
+<!-- Email Drafts — full width above the columns -->
+<?php if ($emails): ?>
+<div style="margin-bottom:24px">
+  <?php foreach ($emails as $em): ?>
+  <div class="card" style="margin-bottom:16px" id="emailCard<?= $em['id'] ?>">
+    <div style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:13px;font-weight:600">&#9993; Touch #<?= $em['touch_number'] ?? 1 ?></span>
+        <?php if (!empty($em['ai_provider'])): ?>
+        <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;background:rgba(99,102,241,0.15);color:#818cf8;letter-spacing:.05em"><?= strtoupper(htmlspecialchars($em['ai_provider'])) ?></span>
+        <?php endif; ?>
+        <?php if (!empty($em['matched_service_id']) && $matchedService): ?>
+        <span style="font-size:11px;color:var(--muted)">&#8227; <?= htmlspecialchars($matchedService['name']) ?><?php if($matchedService['vertical_name']): ?> &middot; <?= htmlspecialchars($matchedService['vertical_name']) ?><?php endif; ?></span>
+        <?php endif; ?>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:11px;color:var(--muted)"><?= date('d M Y', strtotime($em['created_at'])) ?></span>
+        <button onclick="copyEmail(<?= $em['id'] ?>)" class="btn btn-secondary btn-sm">&#128203; Copy</button>
+        <a href="mailto:?subject=<?= urlencode($em['subject']) ?>&body=<?= urlencode($em['body']) ?>" class="btn btn-ghost btn-sm">&#128232; Open in Mail</a>
+      </div>
+    </div>
+    <div style="padding:16px 20px;display:grid;grid-template-columns:1fr 1fr;gap:20px">
+      <div>
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:600;margin-bottom:8px">Subject</div>
+        <div style="font-size:14px;font-weight:600;line-height:1.4;color:var(--text)"><?= htmlspecialchars($em['subject']) ?></div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:600;margin-bottom:8px">Body</div>
+        <textarea id="emailBody<?= $em['id'] ?>" rows="10" style="width:100%;font-size:12px;line-height:1.7;resize:vertical;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px;color:var(--text)"><?= htmlspecialchars($em['body']) ?></textarea>
+      </div>
+    </div>
+  </div>
+  <?php endforeach; ?>
+
+  <!-- Generate next touch -->
+  <div style="background:var(--card);border:1px dashed var(--border);border-radius:10px;padding:20px;text-align:center">
+    <div style="font-size:13px;color:var(--muted);margin-bottom:12px">Generate next follow-up with AI</div>
+    <button onclick="generateEmail(<?= $nextTouch ?>)" class="btn btn-primary" id="genBtn">&#10024; Generate Touch #<?= $nextTouch ?></button>
+    <div id="genStatus" style="margin-top:12px;font-size:13px"></div>
+  </div>
+</div>
+<?php else: ?>
+<!-- No emails yet — show prominent generate card -->
+<div class="card" style="margin-bottom:24px;padding:28px;text-align:center">
+  <div style="font-size:24px;margin-bottom:8px">&#9993;</div>
+  <div style="font-size:15px;font-weight:600;margin-bottom:6px">No email draft yet</div>
+  <div style="font-size:13px;color:var(--muted);margin-bottom:20px">Generate a cold email using your Knowledge Base &amp; AI, or re-enrich first to refresh signals.</div>
+  <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+    <button onclick="generateEmail(1)" class="btn btn-primary" id="genBtn">&#10024; Generate Email Now</button>
+    <button onclick="enrichNow()" class="btn btn-secondary">&#9889; Re-Enrich First, Then Generate</button>
+  </div>
+  <div id="genStatus" style="margin-top:16px;font-size:13px"></div>
+</div>
+<?php endif; ?>
 
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
 
@@ -195,57 +255,6 @@ include 'layout.php';
     <?php endif; ?>
   </div>
 
-  <!-- Email Drafts -->
-  <?php if ($emails): ?>
-  <?php foreach ($emails as $em): ?>
-  <div class="card" id="emailCard<?= $em['id'] ?>">
-    <div style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-      <div style="display:flex;align-items:center;gap:10px">
-        <span style="font-size:13px;font-weight:600">&#9993; Touch #<?= $em['touch_number'] ?? 1 ?></span>
-        <?php if (!empty($em['ai_provider'])): ?>
-        <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;background:rgba(99,102,241,0.15);color:#818cf8;letter-spacing:.05em"><?= strtoupper(htmlspecialchars($em['ai_provider'])) ?></span>
-        <?php endif; ?>
-      </div>
-      <div style="font-size:11px;color:var(--muted)"><?= date('d M Y', strtotime($em['created_at'])) ?></div>
-    </div>
-    <?php if (!empty($em['matched_service_id']) && $matchedService && $matchedService['id'] == $em['matched_service_id']): ?>
-    <div style="padding:8px 20px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">
-      Pitched: <strong style="color:var(--text)"><?= htmlspecialchars($matchedService['name']) ?></strong>
-      <?php if ($matchedService['vertical_name']): ?> &middot; <?= htmlspecialchars($matchedService['vertical_name']) ?><?php endif; ?>
-    </div>
-    <?php endif; ?>
-    <div style="padding:16px 20px">
-      <div style="font-size:11px;color:var(--muted);margin-bottom:4px">SUBJECT</div>
-      <div style="font-size:13px;font-weight:600;margin-bottom:14px;line-height:1.4"><?= htmlspecialchars($em['subject']) ?></div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:4px">BODY</div>
-      <textarea id="emailBody<?= $em['id'] ?>" rows="10" style="width:100%;font-size:12px;line-height:1.7;resize:vertical"><?= htmlspecialchars($em['body']) ?></textarea>
-      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-        <button onclick="copyEmail(<?= $em['id'] ?>)" class="btn btn-secondary btn-sm">&#128203; Copy</button>
-        <a href="mailto:?subject=<?= urlencode($em['subject']) ?>&body=<?= urlencode($em['body']) ?>" class="btn btn-ghost btn-sm">&#128232; Open in Mail</a>
-      </div>
-    </div>
-  </div>
-  <?php endforeach; ?>
-
-  <!-- Generate Next Touch -->
-  <?php
-  $maxTouch = 0;
-  foreach ($emails as $em) { if (($em['touch_number'] ?? 1) > $maxTouch) $maxTouch = $em['touch_number'] ?? 1; }
-  $nextTouch = $maxTouch + 1;
-  ?>
-  <div id="genEmailCard" style="background:var(--card);border:1px dashed var(--border);border-radius:10px;padding:20px;text-align:center">
-    <div style="font-size:13px;color:var(--muted);margin-bottom:12px">Generate follow-up email using AI</div>
-    <button onclick="generateEmail(<?= $nextTouch ?>)" class="btn btn-primary" id="genBtn">&#10024; Generate Touch #<?= $nextTouch ?></button>
-    <div id="genStatus" style="margin-top:12px;font-size:13px"></div>
-  </div>
-
-  <?php else: ?>
-  <div class="card" style="padding:20px;text-align:center">
-    <div style="font-size:13px;color:var(--muted);margin-bottom:12px">No email drafts yet. Enrich this company to generate the first email.</div>
-    <button onclick="enrichNow()" class="btn btn-primary">&#9889; Enrich &amp; Generate Email</button>
-  </div>
-  <?php endif; ?>
-
 </div>
 </div>
 
@@ -297,7 +306,7 @@ async function enrichNow() {
   var r = await fetch('api/enrich.php?id=' + companyId, {method:'POST'});
   var d = await r.json();
   if (d.ok) {
-    var aiNote = d.ai_used ? ' AI (' + (d.matched_service || 'no match') + ')' : ' template';
+    var aiNote = d.ai_used ? ' AI (' + (d.matched_service || 'no match') + ')' + (d.persona_used ? ' + persona: ' + d.persona_used : '') : ' template';
     status.innerHTML = '<span style="color:var(--success)">&#10003; Done! Score: ' + d.score + ' (' + d.priority + '). News: ' + d.news_count + ', Jobs: ' + d.jobs_count + ', Tech: ' + d.tech_found + '. Email via' + aiNote + '. Reloading...</span>';
     setTimeout(function(){ location.reload(); }, 2200);
   } else {
@@ -309,19 +318,29 @@ async function enrichNow() {
 
 async function generateEmail(touchNumber) {
   var btn = document.getElementById('genBtn');
+  var btnTop = document.getElementById('genBtnTop');
   var status = document.getElementById('genStatus');
-  btn.disabled = true;
-  btn.textContent = 'Generating...';
-  status.innerHTML = '<span style="color:var(--muted)">Calling AI provider...</span>';
+  var statusTop = document.getElementById('genStatusTop');
+  if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
+  if (btnTop) { btnTop.disabled = true; btnTop.textContent = 'Generating...'; }
+  if (status) status.innerHTML = '<span style="color:var(--muted)">Calling AI provider...</span>';
+  if (statusTop) { statusTop.style.display='block'; statusTop.style.background='rgba(99,102,241,0.08)'; statusTop.style.border='1px solid rgba(99,102,241,0.3)'; statusTop.style.color='var(--muted)'; statusTop.textContent='Calling AI provider...'; }
   var r = await fetch('api/generate_email.php?company_id=' + companyId + '&touch_number=' + touchNumber);
   var d = await r.json();
   if (d.ok) {
-    status.innerHTML = '<span style="color:var(--success)">&#10003; Touch #' + d.touch_number + ' generated via ' + d.provider.toUpperCase() + '. Reloading...</span>';
-    setTimeout(function(){ location.reload(); }, 1500);
+    var msg = '&#10003; Touch #' + d.touch_number + ' generated via ' + d.provider.toUpperCase();
+    if (d.matched_service) msg += ' &middot; Service: ' + d.matched_service;
+    if (d.persona) msg += ' &middot; Persona: ' + d.persona;
+    msg += '. Reloading...';
+    if (status) status.innerHTML = '<span style="color:var(--success)">' + msg + '</span>';
+    if (statusTop) { statusTop.style.background='rgba(34,197,94,0.1)'; statusTop.style.border='1px solid rgba(34,197,94,0.4)'; statusTop.style.color='#22c55e'; statusTop.innerHTML=msg; }
+    setTimeout(function(){ location.reload(); }, 1800);
   } else {
-    status.innerHTML = '<span style="color:var(--danger)">' + (d.error || 'Generation failed. Check AI settings.') + '</span>';
-    btn.disabled = false;
-    btn.textContent = '&#10024; Generate Touch #' + touchNumber;
+    var err = d.error || 'Generation failed. Check AI settings at /settings.php';
+    if (status) status.innerHTML = '<span style="color:var(--danger)">' + err + '</span>';
+    if (statusTop) { statusTop.style.background='rgba(239,68,68,0.1)'; statusTop.style.border='1px solid rgba(239,68,68,0.4)'; statusTop.style.color='#ef4444'; statusTop.textContent=err; }
+    if (btn) { btn.disabled=false; btn.textContent='&#10024; Generate Touch #'+touchNumber; }
+    if (btnTop) { btnTop.disabled=false; btnTop.textContent='&#10024; '+(touchNumber===1?'Generate Email':'Generate Touch #'+touchNumber); }
   }
 }
 
