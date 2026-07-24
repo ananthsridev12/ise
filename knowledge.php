@@ -2,8 +2,19 @@
 require_once 'config.php';
 require_once 'lib/DB.php';
 
+$tabs = array('company','verticals','services','icps','personas','tone','senders','proof','documents');
+$tabLabels = array(
+  'company'   => 'Company',
+  'verticals' => 'Verticals',
+  'services'  => 'Services',
+  'icps'      => 'ICPs',
+  'personas'  => 'Personas',
+  'tone'      => 'Tone & Voice',
+  'senders'   => 'Senders',
+  'proof'     => 'Proof Points',
+  'documents' => 'Documents',
+);
 $tab = $_GET['tab'] ?? 'company';
-$tabs = array('company','verticals','services','icps','personas','tone','senders');
 if (!in_array($tab, $tabs)) $tab = 'company';
 
 $currentPage = 'knowledge';
@@ -19,8 +30,8 @@ include 'layout.php';
 
 <div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:24px;overflow-x:auto">
   <?php foreach ($tabs as $t): ?>
-  <a href="?tab=<?= $t ?>" style="padding:10px 18px;font-size:13px;font-weight:500;text-decoration:none;white-space:nowrap;border-bottom:2px solid <?= $tab===$t?'var(--accent)':'transparent' ?>;color:<?= $tab===$t?'var(--accent)':'var(--muted)' ?>">
-    <?= $t==='icps'?'ICPs':(ucfirst($t)) ?>
+  <a href="?tab=<?= $t ?>" style="padding:10px 16px;font-size:13px;font-weight:500;text-decoration:none;white-space:nowrap;border-bottom:2px solid <?= $tab===$t?'var(--accent)':'transparent' ?>;color:<?= $tab===$t?'var(--accent)':'var(--muted)' ?>">
+    <?= htmlspecialchars($tabLabels[$t] ?? ucfirst($t)) ?>
   </a>
   <?php endforeach; ?>
 </div>
@@ -92,6 +103,12 @@ include 'layout.php';
   <?php else: ?>
   <div style="padding:20px;color:var(--muted);font-size:13px">No verticals yet. Add your business units above.</div>
   <?php endif; ?>
+  <div style="padding:10px 20px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <span style="font-size:12px;color:var(--muted)">Bulk import:</span>
+    <input type="file" id="imp_verticals" accept=".csv" style="font-size:12px;color:var(--muted)">
+    <button onclick="importCSV('verticals','imp_verticals',this)" class="btn btn-secondary btn-sm">Import CSV</button>
+    <a href="api/kb_template.php?entity=verticals" class="btn btn-ghost btn-sm">&#8595; Template</a>
+  </div>
 </div>
 </div>
 
@@ -155,6 +172,12 @@ $verticals = DB::fetchAll('SELECT id, name FROM kb_verticals ORDER BY name');
   <?php else: ?>
   <div style="padding:20px;color:var(--muted);font-size:13px">No services yet.</div>
   <?php endif; ?>
+  <div style="padding:10px 20px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <span style="font-size:12px;color:var(--muted)">Bulk import:</span>
+    <input type="file" id="imp_services" accept=".csv" style="font-size:12px;color:var(--muted)">
+    <button onclick="importCSV('services','imp_services',this)" class="btn btn-secondary btn-sm">Import CSV</button>
+    <a href="api/kb_template.php?entity=services" class="btn btn-ghost btn-sm">&#8595; Template</a>
+  </div>
 </div>
 </div>
 
@@ -170,7 +193,7 @@ $services  = DB::fetchAll('SELECT id, name FROM kb_services ORDER BY name');
   <div style="padding:20px">
     <form id="icpForm">
     <input type="hidden" name="id" id="icp_id" value="">
-    <div class="form-group"><label>ICP Name * <span style="color:var(--muted);font-size:11px">e.g. "Mid-market ERP Upgrader"</span></label><input type="text" name="name" id="icp_name" required></div>
+    <div class="form-group"><label>ICP Name * <span style="color:var(--muted);font-size:11px">e.g. &quot;Mid-market ERP Upgrader&quot;</span></label><input type="text" name="name" id="icp_name" required></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
       <div class="form-group"><label>Vertical / BU</label>
         <select name="vertical_id" id="icp_vertical_id">
@@ -184,15 +207,15 @@ $services  = DB::fetchAll('SELECT id, name FROM kb_services ORDER BY name');
           <?php foreach ($services as $s): ?><option value="<?= $s['id'] ?>"><?= htmlspecialchars($s['name']) ?></option><?php endforeach; ?>
         </select>
       </div>
-      <div class="form-group"><label>Company Size Range *</label><input type="text" name="size_range" id="icp_size_range" required placeholder="500-5000 employees"></div>
+      <div class="form-group"><label>Company Size Range</label><input type="text" name="size_range" id="icp_size_range" placeholder="500-5000 employees"></div>
       <div class="form-group"><label>Annual Revenue Range</label><input type="text" name="revenue_range" id="icp_revenue_range" placeholder="$50M-$500M"></div>
     </div>
-    <div class="form-group"><label>Target Industries *</label><input type="text" name="industries" id="icp_industries" required placeholder="Manufacturing, Distribution, ..."></div>
+    <div class="form-group"><label>Target Industries</label><input type="text" name="industries" id="icp_industries" placeholder="Manufacturing, Distribution, ..."></div>
     <div class="form-group"><label>Geographies</label><input type="text" name="geographies" id="icp_geographies" placeholder="North America, EMEA, APAC"></div>
-    <div class="form-group"><label>Tech Stack Signals <span style="color:var(--muted);font-size:11px">(technologies they currently use)</span></label><input type="text" name="tech_stack_signals" id="icp_tech_stack_signals" placeholder="SAP ECC, Oracle EBS, Legacy ERP"></div>
-    <div class="form-group"><label>Trigger Events * <span style="color:var(--muted);font-size:11px">(what makes them a good prospect now)</span></label><textarea name="trigger_events" id="icp_trigger_events" rows="2" required placeholder="M&amp;A activity, system end-of-life, new CIO hire, IPO..."></textarea></div>
-    <div class="form-group"><label>Perfect Fit Signals</label><textarea name="perfect_fit" id="icp_perfect_fit" rows="2" placeholder="What makes them an ideal customer"></textarea></div>
-    <div class="form-group"><label>Poor Fit / Disqualifiers</label><textarea name="disqualifiers" id="icp_disqualifiers" rows="2" placeholder="Too small, wrong tech, recent implementation..."></textarea></div>
+    <div class="form-group"><label>Tech Stack Signals</label><input type="text" name="tech_stack_signals" id="icp_tech_stack_signals" placeholder="SAP ECC, Oracle EBS, Legacy ERP"></div>
+    <div class="form-group"><label>Trigger Events</label><textarea name="trigger_events" id="icp_trigger_events" rows="2" placeholder="M&amp;A activity, system end-of-life, new CIO hire..."></textarea></div>
+    <div class="form-group"><label>Perfect Fit Signals</label><textarea name="perfect_fit" id="icp_perfect_fit" rows="2"></textarea></div>
+    <div class="form-group"><label>Poor Fit / Disqualifiers</label><textarea name="disqualifiers" id="icp_disqualifiers" rows="2"></textarea></div>
     <div class="form-group"><label>Buying Process Notes</label><textarea name="buying_process" id="icp_buying_process" rows="2" placeholder="Typical deal length, committee size, budget cycle..."></textarea></div>
     <div style="display:flex;gap:8px">
       <button type="button" onclick="kbSave('save_icp','icpForm',this)" class="btn btn-primary">Save ICP</button>
@@ -214,7 +237,6 @@ $services  = DB::fetchAll('SELECT id, name FROM kb_services ORDER BY name');
           <?php if ($icp['s_name']): ?> &middot; <?= htmlspecialchars($icp['s_name']) ?><?php endif; ?>
           <?php if ($icp['size_range']): ?> &middot; <?= htmlspecialchars($icp['size_range']) ?><?php endif; ?>
         </div>
-        <?php if ($icp['industries']): ?><div style="font-size:11px;color:var(--muted)"><?= htmlspecialchars($icp['industries']) ?></div><?php endif; ?>
       </div>
       <div style="display:flex;gap:6px">
         <button onclick="editICP(<?= htmlspecialchars(json_encode($icp)) ?>)" class="btn btn-secondary btn-sm">Edit</button>
@@ -226,6 +248,12 @@ $services  = DB::fetchAll('SELECT id, name FROM kb_services ORDER BY name');
   <?php else: ?>
   <div style="padding:20px;color:var(--muted);font-size:13px">No ICPs yet.</div>
   <?php endif; ?>
+  <div style="padding:10px 20px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <span style="font-size:12px;color:var(--muted)">Bulk import:</span>
+    <input type="file" id="imp_icps" accept=".csv" style="font-size:12px;color:var(--muted)">
+    <button onclick="importCSV('icps','imp_icps',this)" class="btn btn-secondary btn-sm">Import CSV</button>
+    <a href="api/kb_template.php?entity=icps" class="btn btn-ghost btn-sm">&#8595; Template</a>
+  </div>
 </div>
 </div>
 
@@ -242,11 +270,11 @@ $seniorityOpts = array('C-Suite','VP','Director','Manager','Individual Contribut
   <div style="padding:20px">
     <form id="personaForm">
     <input type="hidden" name="id" id="persona_id" value="">
-    <div class="form-group"><label>Persona Name * <span style="color:var(--muted);font-size:11px">e.g. "The Digital CIO", "ERP Project Director"</span></label><input type="text" name="name" id="persona_name" required placeholder="The Operational CFO"></div>
+    <div class="form-group"><label>Persona Name * <span style="color:var(--muted);font-size:11px">e.g. &quot;The Digital CIO&quot;</span></label><input type="text" name="name" id="persona_name" required placeholder="The Operational CFO"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
       <div class="form-group"><label>Job Title *</label><input type="text" name="title" id="persona_title" required placeholder="VP of IT, ERP Program Director"></div>
       <div class="form-group"><label>Department *</label><input type="text" name="department" id="persona_department" required placeholder="IT, Finance, Operations"></div>
-      <div class="form-group"><label>Seniority *</label>
+      <div class="form-group"><label>Seniority</label>
         <select name="seniority" id="persona_seniority">
           <?php foreach ($seniorityOpts as $opt): ?>
           <option value="<?= $opt ?>"><?= $opt ?></option>
@@ -269,10 +297,10 @@ $seniorityOpts = array('C-Suite','VP','Director','Manager','Individual Contribut
         </select>
       </div>
     </div>
-    <div class="form-group"><label>Goals * <span style="color:var(--muted);font-size:11px">(what they're trying to achieve professionally)</span></label><textarea name="goals" id="persona_goals" rows="2" required placeholder="Reduce system downtime, consolidate platforms, deliver ERP on time..."></textarea></div>
-    <div class="form-group"><label>Pain Points * <span style="color:var(--muted);font-size:11px">(what frustrates them day-to-day)</span></label><textarea name="pain_points" id="persona_pain_points" rows="2" required placeholder="Legacy systems, manual processes, data silos..."></textarea></div>
-    <div class="form-group"><label>Typical Objections</label><textarea name="objections" id="persona_objections" rows="2" placeholder="Too expensive, bad timing, happy with current vendor, need board approval..."></textarea></div>
-    <div class="form-group"><label>KPIs They're Measured On</label><input type="text" name="kpis" id="persona_kpis" placeholder="System uptime, project delivery %, cost savings, user adoption"></div>
+    <div class="form-group"><label>Goals *</label><textarea name="goals" id="persona_goals" rows="2" required placeholder="Reduce system downtime, consolidate platforms..."></textarea></div>
+    <div class="form-group"><label>Pain Points *</label><textarea name="pain_points" id="persona_pain_points" rows="2" required placeholder="Legacy systems, manual processes, data silos..."></textarea></div>
+    <div class="form-group"><label>Typical Objections</label><textarea name="objections" id="persona_objections" rows="2" placeholder="Too expensive, bad timing, need board approval..."></textarea></div>
+    <div class="form-group"><label>KPIs They're Measured On</label><input type="text" name="kpis" id="persona_kpis" placeholder="System uptime, project delivery %, cost savings"></div>
     <div class="form-group"><label>Decision-Making Role</label>
       <select name="decision_role" id="persona_decision_role">
         <option value="Economic Buyer">Economic Buyer (signs the PO)</option>
@@ -283,9 +311,9 @@ $seniorityOpts = array('C-Suite','VP','Director','Manager','Individual Contribut
         <option value="Blocker">Blocker / Detractor</option>
       </select>
     </div>
-    <div class="form-group"><label>Communication Style</label><textarea name="communication_style" id="persona_communication_style" rows="2" placeholder="Data-driven, prefers short emails, responds well to demos, likes ROI focus..."></textarea></div>
-    <div class="form-group"><label>Preferred Content Types</label><input type="text" name="preferred_content" id="persona_preferred_content" placeholder="Case studies, ROI calculators, whitepapers, live demos"></div>
-    <div class="form-group"><label>Watering Holes <span style="color:var(--muted);font-size:11px">(where they spend time)</span></label><input type="text" name="watering_holes" id="persona_watering_holes" placeholder="LinkedIn, Gartner, SAP events, ASUG..."></div>
+    <div class="form-group"><label>Communication Style</label><textarea name="communication_style" id="persona_communication_style" rows="2" placeholder="Data-driven, prefers short emails, likes ROI focus..."></textarea></div>
+    <div class="form-group"><label>Preferred Content Types</label><input type="text" name="preferred_content" id="persona_preferred_content" placeholder="Case studies, ROI calculators, live demos"></div>
+    <div class="form-group"><label>Watering Holes</label><input type="text" name="watering_holes" id="persona_watering_holes" placeholder="LinkedIn, Gartner, SAP events, ASUG..."></div>
     <div class="form-group"><label>Email Hook / Opening Angle</label><textarea name="email_hook" id="persona_email_hook" rows="2" placeholder="Lead with operational risk, ROI, peer benchmarks..."></textarea></div>
     <div style="display:flex;gap:8px">
       <button type="button" onclick="kbSave('save_persona','personaForm',this)" class="btn btn-primary">Save Persona</button>
@@ -315,8 +343,14 @@ $seniorityOpts = array('C-Suite','VP','Director','Manager','Individual Contribut
   </div>
   <?php endforeach; ?>
   <?php else: ?>
-  <div style="padding:20px;color:var(--muted);font-size:13px">No personas yet. Add your key buyer types above.</div>
+  <div style="padding:20px;color:var(--muted);font-size:13px">No personas yet.</div>
   <?php endif; ?>
+  <div style="padding:10px 20px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <span style="font-size:12px;color:var(--muted)">Bulk import:</span>
+    <input type="file" id="imp_personas" accept=".csv" style="font-size:12px;color:var(--muted)">
+    <button onclick="importCSV('personas','imp_personas',this)" class="btn btn-secondary btn-sm">Import CSV</button>
+    <a href="api/kb_template.php?entity=personas" class="btn btn-ghost btn-sm">&#8595; Template</a>
+  </div>
 </div>
 </div>
 
@@ -413,6 +447,149 @@ $seniorityOpts = array('C-Suite','VP','Director','Manager','Individual Contribut
   <?php endif; ?>
 </div>
 </div>
+
+<?php elseif ($tab === 'proof'): ?>
+<?php
+$proofs    = DB::fetchAll('SELECT p.*, v.name as v_name, s.name as s_name FROM kb_proof p LEFT JOIN kb_verticals v ON p.vertical_id=v.id LEFT JOIN kb_services s ON p.service_id=s.id ORDER BY p.client_name');
+$verticals = DB::fetchAll('SELECT id, name FROM kb_verticals ORDER BY name');
+$services  = DB::fetchAll('SELECT id, name FROM kb_services ORDER BY name');
+?>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+<div class="card">
+  <div style="padding:16px 20px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600">Add / Edit Proof Point (Block 8)</div>
+  <div style="padding:20px">
+    <form id="proofForm">
+    <input type="hidden" name="id" id="proof_id" value="">
+    <div class="form-group"><label>Client Name *</label><input type="text" name="client_name" id="proof_client_name" required></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div class="form-group"><label>Industry</label><input type="text" name="client_industry" id="proof_client_industry"></div>
+      <div class="form-group"><label>Client Size</label><input type="text" name="client_size" id="proof_client_size" placeholder="e.g. 2,000 employees"></div>
+      <div class="form-group"><label>Vertical / BU</label>
+        <select name="vertical_id" id="proof_vertical_id">
+          <option value="">-- none --</option>
+          <?php foreach ($verticals as $v): ?><option value="<?= $v['id'] ?>"><?= htmlspecialchars($v['name']) ?></option><?php endforeach; ?>
+        </select>
+      </div>
+      <div class="form-group"><label>Service / Product</label>
+        <select name="service_id" id="proof_service_id">
+          <option value="">-- none --</option>
+          <?php foreach ($services as $s): ?><option value="<?= $s['id'] ?>"><?= htmlspecialchars($s['name']) ?></option><?php endforeach; ?>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label>Challenge / Problem</label><textarea name="challenge" id="proof_challenge" rows="2"></textarea></div>
+    <div class="form-group"><label>Solution We Provided</label><textarea name="solution" id="proof_solution" rows="2"></textarea></div>
+    <div class="form-group"><label>Outcomes / Results</label><textarea name="outcomes" id="proof_outcomes" rows="2"></textarea></div>
+    <div class="form-group"><label>Key Metrics <span style="color:var(--muted);font-size:11px">(e.g. 30% cost reduction, 6-month go-live)</span></label><input type="text" name="metrics" id="proof_metrics"></div>
+    <div class="form-group"><label>Client Quote</label><textarea name="quote" id="proof_quote" rows="2"></textarea></div>
+    <div class="form-group"><label>Quote Attribution <span style="color:var(--muted);font-size:11px">(Name, Title at Company)</span></label><input type="text" name="quote_attribution" id="proof_quote_attribution"></div>
+    <div class="form-group" style="display:flex;align-items:center;gap:10px">
+      <input type="checkbox" name="is_public" id="proof_is_public" value="1" checked>
+      <label for="proof_is_public" style="margin:0;cursor:pointer">Public / shareable</label>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button type="button" onclick="kbSave('save_proof','proofForm',this)" class="btn btn-primary">Save Proof Point</button>
+      <button type="button" onclick="clearProofForm()" class="btn btn-secondary">Clear</button>
+    </div>
+    </form>
+  </div>
+</div>
+<div class="card">
+  <div style="padding:16px 20px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600">Proof Points / Case Studies (<?= count($proofs) ?>)</div>
+  <?php if ($proofs): ?>
+  <?php foreach ($proofs as $p): ?>
+  <div style="padding:12px 20px;border-bottom:1px solid rgba(42,45,58,0.4)">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div>
+        <div style="font-weight:600;font-size:13px"><?= htmlspecialchars($p['client_name']) ?></div>
+        <div style="font-size:11px;color:var(--muted)"><?= htmlspecialchars($p['client_industry']??'') ?><?php if($p['v_name']): ?> &middot; <?= htmlspecialchars($p['v_name']) ?><?php endif; ?></div>
+        <?php if ($p['metrics']): ?><div style="font-size:11px;color:var(--accent)"><?= htmlspecialchars($p['metrics']) ?></div><?php endif; ?>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button onclick="editProof(<?= htmlspecialchars(json_encode($p)) ?>)" class="btn btn-secondary btn-sm">Edit</button>
+        <button onclick="kbDelete('delete_proof',<?= $p['id'] ?>)" class="btn btn-ghost btn-sm" style="color:var(--danger)">Del</button>
+      </div>
+    </div>
+  </div>
+  <?php endforeach; ?>
+  <?php else: ?>
+  <div style="padding:20px;color:var(--muted);font-size:13px">No proof points yet.</div>
+  <?php endif; ?>
+</div>
+</div>
+
+<?php elseif ($tab === 'documents'): ?>
+<?php
+$docs      = DB::fetchAll('SELECT d.*, v.name as v_name, s.name as s_name FROM kb_documents d LEFT JOIN kb_verticals v ON d.vertical_id=v.id LEFT JOIN kb_services s ON d.service_id=s.id ORDER BY d.doc_type, d.title');
+$verticals = DB::fetchAll('SELECT id, name FROM kb_verticals ORDER BY name');
+$services  = DB::fetchAll('SELECT id, name FROM kb_services ORDER BY name');
+$docTypes  = array('case_study','whitepaper','brochure','deck','one_pager','roi_calculator','video','other');
+?>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+<div class="card">
+  <div style="padding:16px 20px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600">Add / Edit Document / Collateral (Block 9)</div>
+  <div style="padding:20px">
+    <form id="docForm">
+    <input type="hidden" name="id" id="doc_id" value="">
+    <div class="form-group"><label>Title *</label><input type="text" name="title" id="doc_title" required></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div class="form-group"><label>Document Type</label>
+        <select name="doc_type" id="doc_doc_type">
+          <?php foreach ($docTypes as $dt): ?>
+          <option value="<?= $dt ?>"><?= str_replace('_',' ',ucfirst($dt)) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+      <div class="form-group"><label>Vertical / BU</label>
+        <select name="vertical_id" id="doc_vertical_id">
+          <option value="">-- none --</option>
+          <?php foreach ($verticals as $v): ?><option value="<?= $v['id'] ?>"><?= htmlspecialchars($v['name']) ?></option><?php endforeach; ?>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label>Service / Product</label>
+      <select name="service_id" id="doc_service_id">
+        <option value="">-- none --</option>
+        <?php foreach ($services as $s): ?><option value="<?= $s['id'] ?>"><?= htmlspecialchars($s['name']) ?></option><?php endforeach; ?>
+      </select>
+    </div>
+    <div class="form-group"><label>URL / Link *</label><input type="url" name="url" id="doc_url" required placeholder="https://..."></div>
+    <div class="form-group"><label>Description</label><textarea name="description" id="doc_description" rows="2"></textarea></div>
+    <div class="form-group"><label>When to Use <span style="color:var(--muted);font-size:11px">(context for AI to reference)</span></label><textarea name="use_case" id="doc_use_case" rows="2" placeholder="Use when prospect has M&amp;A signal and runs SAP ECC..."></textarea></div>
+    <div class="form-group" style="display:flex;align-items:center;gap:10px">
+      <input type="checkbox" name="is_public" id="doc_is_public" value="1" checked>
+      <label for="doc_is_public" style="margin:0;cursor:pointer">Public / shareable</label>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button type="button" onclick="kbSave('save_document','docForm',this)" class="btn btn-primary">Save Document</button>
+      <button type="button" onclick="clearDocForm()" class="btn btn-secondary">Clear</button>
+    </div>
+    </form>
+  </div>
+</div>
+<div class="card">
+  <div style="padding:16px 20px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600">Documents / Collateral (<?= count($docs) ?>)</div>
+  <?php if ($docs): ?>
+  <?php foreach ($docs as $d): ?>
+  <div style="padding:12px 20px;border-bottom:1px solid rgba(42,45,58,0.4)">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div>
+        <div style="font-weight:600;font-size:13px"><?= htmlspecialchars($d['title']) ?></div>
+        <div style="font-size:11px;color:var(--muted)"><?= str_replace('_',' ',ucfirst($d['doc_type']??'')) ?><?php if($d['v_name']): ?> &middot; <?= htmlspecialchars($d['v_name']) ?><?php endif; ?></div>
+        <?php if ($d['url']): ?><div style="font-size:11px"><a href="<?= htmlspecialchars($d['url']) ?>" target="_blank" rel="noopener" style="color:var(--accent)">Open link</a></div><?php endif; ?>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button onclick="editDocument(<?= htmlspecialchars(json_encode($d)) ?>)" class="btn btn-secondary btn-sm">Edit</button>
+        <button onclick="kbDelete('delete_document',<?= $d['id'] ?>)" class="btn btn-ghost btn-sm" style="color:var(--danger)">Del</button>
+      </div>
+    </div>
+  </div>
+  <?php endforeach; ?>
+  <?php else: ?>
+  <div style="padding:20px;color:var(--muted);font-size:13px">No documents yet.</div>
+  <?php endif; ?>
+</div>
+</div>
 <?php endif; ?>
 
 <script>
@@ -429,8 +606,7 @@ function showMsg(ok, text) {
 
 async function kbSave(action, formId, btn) {
   var origText = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = 'Saving...';
+  btn.disabled = true; btn.textContent = 'Saving...';
   try {
     var form = document.getElementById(formId);
     var data = new URLSearchParams();
@@ -439,40 +615,17 @@ async function kbSave(action, formId, btn) {
     for (var i = 0; i < els.length; i++) {
       var el = els[i];
       if (!el.name) continue;
-      if (el.type === 'checkbox') {
-        data.append(el.name, el.checked ? '1' : '0');
-      } else {
-        data.append(el.name, el.value);
-      }
+      if (el.type === 'checkbox') { data.append(el.name, el.checked ? '1' : '0'); }
+      else { data.append(el.name, el.value); }
     }
-    var r = await fetch('api/kb.php', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: data.toString()
-    });
-    if (!r.ok) {
-      showMsg(false, 'Server error ' + r.status + ' — check that api/ folder has 755 permissions.');
-      btn.disabled = false; btn.textContent = origText;
-      return;
-    }
+    var r = await fetch('api/kb.php', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:data.toString()});
+    if (!r.ok) { showMsg(false, 'Server error ' + r.status + ' — check that api/ folder has 755 permissions.'); btn.disabled=false; btn.textContent=origText; return; }
     var text = await r.text();
     var d;
-    try { d = JSON.parse(text); } catch(e) {
-      showMsg(false, 'Unexpected server response: ' + text.substring(0, 150));
-      btn.disabled = false; btn.textContent = origText;
-      return;
-    }
-    if (d.ok) {
-      showMsg(true, '✓ Saved successfully.');
-      setTimeout(function(){ location.reload(); }, 1800);
-    } else {
-      showMsg(false, d.error || 'Save failed.');
-      btn.disabled = false; btn.textContent = origText;
-    }
-  } catch(e) {
-    showMsg(false, 'Network error: ' + e.message);
-    btn.disabled = false; btn.textContent = origText;
-  }
+    try { d = JSON.parse(text); } catch(e) { showMsg(false, 'Unexpected response: ' + text.substring(0,150)); btn.disabled=false; btn.textContent=origText; return; }
+    if (d.ok) { showMsg(true, '✓ Saved successfully.'); setTimeout(function(){ location.reload(); }, 1800); }
+    else { showMsg(false, d.error || 'Save failed.'); btn.disabled=false; btn.textContent=origText; }
+  } catch(e) { showMsg(false, 'Network error: ' + e.message); btn.disabled=false; btn.textContent=origText; }
 }
 
 async function kbDelete(action, id) {
@@ -483,6 +636,22 @@ async function kbDelete(action, id) {
     if (d.ok) location.reload();
     else showMsg(false, d.error || 'Delete failed');
   } catch(e) { showMsg(false, 'Network error: ' + e.message); }
+}
+
+async function importCSV(entity, fileInputId, btn) {
+  var fileInput = document.getElementById(fileInputId);
+  if (!fileInput.files.length) { showMsg(false, 'Select a CSV file first.'); return; }
+  var origText = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Importing...';
+  try {
+    var fd = new FormData();
+    fd.append('entity', entity);
+    fd.append('file', fileInput.files[0]);
+    var r = await fetch('api/kb_import.php', {method:'POST', body:fd});
+    var d = await r.json();
+    if (d.ok) { showMsg(true, d.message); setTimeout(function(){ location.reload(); }, 1800); }
+    else { showMsg(false, d.error || 'Import failed.'); btn.disabled=false; btn.textContent=origText; }
+  } catch(e) { showMsg(false, 'Network error: ' + e.message); btn.disabled=false; btn.textContent=origText; }
 }
 
 function editVertical(v) {
@@ -595,6 +764,49 @@ function editSender(s) {
 function clearSenderForm() {
   ['sender_id','sender_full_name','sender_title','sender_email','sender_linkedin_url','sender_years_experience','sender_calendar_link','sender_background','sender_credibility','sender_individual_tone','sender_email_opening_style','sender_email_closing_style','sender_verticals','sender_signature'].forEach(function(id){ document.getElementById(id).value=''; });
   document.getElementById('sender_is_default').checked=false;
+}
+
+function editProof(p) {
+  document.getElementById('proof_id').value = p.id||'';
+  document.getElementById('proof_client_name').value = p.client_name||'';
+  document.getElementById('proof_client_industry').value = p.client_industry||'';
+  document.getElementById('proof_client_size').value = p.client_size||'';
+  document.getElementById('proof_vertical_id').value = p.vertical_id||'';
+  document.getElementById('proof_service_id').value = p.service_id||'';
+  document.getElementById('proof_challenge').value = p.challenge||'';
+  document.getElementById('proof_solution').value = p.solution||'';
+  document.getElementById('proof_outcomes').value = p.outcomes||'';
+  document.getElementById('proof_metrics').value = p.metrics||'';
+  document.getElementById('proof_quote').value = p.quote||'';
+  document.getElementById('proof_quote_attribution').value = p.quote_attribution||'';
+  document.getElementById('proof_is_public').checked = p.is_public!=0;
+  window.scrollTo(0,0);
+}
+function clearProofForm() {
+  ['proof_id','proof_client_name','proof_client_industry','proof_client_size','proof_challenge','proof_solution','proof_outcomes','proof_metrics','proof_quote','proof_quote_attribution'].forEach(function(id){ document.getElementById(id).value=''; });
+  document.getElementById('proof_vertical_id').value='';
+  document.getElementById('proof_service_id').value='';
+  document.getElementById('proof_is_public').checked=true;
+}
+
+function editDocument(d) {
+  document.getElementById('doc_id').value = d.id||'';
+  document.getElementById('doc_title').value = d.title||'';
+  document.getElementById('doc_doc_type').value = d.doc_type||'other';
+  document.getElementById('doc_vertical_id').value = d.vertical_id||'';
+  document.getElementById('doc_service_id').value = d.service_id||'';
+  document.getElementById('doc_url').value = d.url||'';
+  document.getElementById('doc_description').value = d.description||'';
+  document.getElementById('doc_use_case').value = d.use_case||'';
+  document.getElementById('doc_is_public').checked = d.is_public!=0;
+  window.scrollTo(0,0);
+}
+function clearDocForm() {
+  ['doc_id','doc_title','doc_url','doc_description','doc_use_case'].forEach(function(id){ document.getElementById(id).value=''; });
+  document.getElementById('doc_doc_type').value='other';
+  document.getElementById('doc_vertical_id').value='';
+  document.getElementById('doc_service_id').value='';
+  document.getElementById('doc_is_public').checked=true;
 }
 </script>
 

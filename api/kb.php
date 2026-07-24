@@ -201,6 +201,59 @@ try {
             echo json_encode(array('ok' => true));
             break;
 
+        case 'save_proof':
+            $id = (int)($_POST['id'] ?? 0);
+            $fields = array(
+                'client_name'       => trim($_POST['client_name'] ?? ''),
+                'client_industry'   => trim($_POST['client_industry'] ?? ''),
+                'client_size'       => trim($_POST['client_size'] ?? ''),
+                'vertical_id'       => (int)($_POST['vertical_id'] ?? 0) ?: null,
+                'service_id'        => (int)($_POST['service_id'] ?? 0) ?: null,
+                'challenge'         => trim($_POST['challenge'] ?? ''),
+                'solution'          => trim($_POST['solution'] ?? ''),
+                'outcomes'          => trim($_POST['outcomes'] ?? ''),
+                'metrics'           => trim($_POST['metrics'] ?? ''),
+                'quote'             => trim($_POST['quote'] ?? ''),
+                'quote_attribution' => trim($_POST['quote_attribution'] ?? ''),
+                'is_public'         => ($_POST['is_public'] ?? '0') === '1' ? 1 : 0,
+            );
+            if (!$fields['client_name']) { echo json_encode(array('ok'=>false,'error'=>'Client name is required')); break; }
+            if ($id) { DB::update('kb_proof', $fields, 'id = ?', array($id)); }
+            else { DB::insert('kb_proof', $fields); }
+            echo json_encode(array('ok' => true));
+            break;
+
+        case 'delete_proof':
+            $id = (int)($_POST['id'] ?? 0);
+            if ($id) DB::query('DELETE FROM kb_proof WHERE id = ?', array($id));
+            echo json_encode(array('ok' => true));
+            break;
+
+        case 'save_document':
+            $id = (int)($_POST['id'] ?? 0);
+            $docTypes = array('case_study','whitepaper','brochure','deck','one_pager','roi_calculator','video','other');
+            $fields = array(
+                'title'       => trim($_POST['title'] ?? ''),
+                'doc_type'    => in_array($_POST['doc_type']??'', $docTypes) ? $_POST['doc_type'] : 'other',
+                'url'         => trim($_POST['url'] ?? ''),
+                'description' => trim($_POST['description'] ?? ''),
+                'use_case'    => trim($_POST['use_case'] ?? ''),
+                'vertical_id' => (int)($_POST['vertical_id'] ?? 0) ?: null,
+                'service_id'  => (int)($_POST['service_id'] ?? 0) ?: null,
+                'is_public'   => ($_POST['is_public'] ?? '0') === '1' ? 1 : 0,
+            );
+            if (!$fields['title']) { echo json_encode(array('ok'=>false,'error'=>'Title is required')); break; }
+            if ($id) { DB::update('kb_documents', $fields, 'id = ?', array($id)); }
+            else { DB::insert('kb_documents', $fields); }
+            echo json_encode(array('ok' => true));
+            break;
+
+        case 'delete_document':
+            $id = (int)($_POST['id'] ?? 0);
+            if ($id) DB::query('DELETE FROM kb_documents WHERE id = ?', array($id));
+            echo json_encode(array('ok' => true));
+            break;
+
         default:
             echo json_encode(array('error' => 'Unknown action: ' . htmlspecialchars($action)));
     }
