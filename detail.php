@@ -8,17 +8,25 @@ if (!$id) { header('Location: companies.php'); exit; }
 $company = DB::fetchOne('SELECT * FROM companies WHERE id = ?', array($id));
 if (!$company) { header('Location: companies.php'); exit; }
 
-$signals  = DB::fetchAll('SELECT * FROM signals WHERE company_id = ? ORDER BY created_at DESC', array($id));
-$tech     = DB::fetchAll('SELECT * FROM company_tech WHERE company_id = ? ORDER BY confidence DESC', array($id));
-$emails   = DB::fetchAll('SELECT * FROM email_drafts WHERE company_id = ? ORDER BY touch_number ASC, id ASC', array($id));
+$signals = DB::fetchAll('SELECT * FROM signals WHERE company_id = ? ORDER BY created_at DESC', array($id));
+$tech    = DB::fetchAll('SELECT * FROM company_tech WHERE company_id = ? ORDER BY confidence DESC', array($id));
+
+// ORDER BY id only — touch_number column may not exist if migration hasn't run
+try {
+    $emails = DB::fetchAll('SELECT * FROM email_drafts WHERE company_id = ? ORDER BY id ASC', array($id));
+} catch (Exception $e) {
+    $emails = array();
+}
 
 $matchedService = null;
 foreach ($emails as $em) {
     if (!empty($em['matched_service_id'])) {
-        $matchedService = DB::fetchOne(
-            'SELECT s.*, v.name as vertical_name FROM kb_services s LEFT JOIN kb_verticals v ON s.vertical_id=v.id WHERE s.id=?',
-            array($em['matched_service_id'])
-        );
+        try {
+            $matchedService = DB::fetchOne(
+                'SELECT s.*, v.name as vertical_name FROM kb_services s LEFT JOIN kb_verticals v ON s.vertical_id=v.id WHERE s.id=?',
+                array($em['matched_service_id'])
+            );
+        } catch (Exception $e) { /* kb_services may not exist yet */ }
         if ($matchedService) break;
     }
 }
@@ -101,7 +109,7 @@ include 'layout.php';
 <div id="enrichStatus" style="display:none;margin-bottom:16px;padding:12px 18px;border-radius:8px;font-size:13px"></div>
 <div id="genStatusTop" style="display:none;margin-bottom:16px;padding:12px 18px;border-radius:8px;font-size:13px"></div>
 
-<!-- Email Drafts — full width above the columns -->
+<!-- Email Drafts -->
 <?php if ($emails): ?>
 <div style="margin-bottom:24px">
   <?php foreach ($emails as $em): ?>
@@ -135,7 +143,6 @@ include 'layout.php';
   </div>
   <?php endforeach; ?>
 
-  <!-- Generate next touch -->
   <div style="background:var(--card);border:1px dashed var(--border);border-radius:10px;padding:20px;text-align:center">
     <div style="font-size:13px;color:var(--muted);margin-bottom:12px">Generate next follow-up with AI</div>
     <button onclick="generateEmail(<?= $nextTouch ?>)" class="btn btn-primary" id="genBtn">&#10024; Generate Touch #<?= $nextTouch ?></button>
@@ -143,7 +150,6 @@ include 'layout.php';
   </div>
 </div>
 <?php else: ?>
-<!-- No emails yet — show prominent generate card -->
 <div class="card" style="margin-bottom:24px;padding:28px;text-align:center">
   <div style="font-size:24px;margin-bottom:8px">&#9993;</div>
   <div style="font-size:15px;font-weight:600;margin-bottom:6px">No email draft yet</div>
@@ -158,16 +164,12 @@ include 'layout.php';
 
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
 
-<!-- LEFT COLUMN -->
 <div style="display:flex;flex-direction:column;gap:20px">
-
-  <!-- Tech Stack -->
   <div class="card">
     <div style="padding:16px 20px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center">
       <span>&#128736; Detected Tech Stack</span>
       <button onclick="togglePasteBox()" class="btn btn-secondary btn-sm">+ Paste Job Description</button>
     </div>
-
     <div id="pasteBox" style="display:none;padding:16px 20px;border-bottom:1px solid var(--border);background:rgba(0,0,0,0.2)">
       <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Paste a job description &mdash; we'll extract the tools automatically.</div>
       <div class="form-group"><label>Job Title (optional)</label><input type="text" id="pasteTitle" placeholder="e.g. SAP Consultant"></div>
@@ -179,7 +181,6 @@ include 'layout.php';
       </div>
       <div id="extractResult" style="margin-top:10px;font-size:13px"></div>
     </div>
-
     <div style="padding:16px 20px">
       <?php if ($tech): ?>
         <?php foreach ($techByCategory as $cat => $tools): ?>
@@ -207,7 +208,6 @@ include 'layout.php';
     </div>
   </div>
 
-  <!-- Job Postings -->
   <div class="card">
     <div style="padding:16px 20px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600">&#128188; Job Postings <span style="color:var(--muted);font-weight:400">(<?= count($jobSigs) ?> fetched)</span></div>
     <?php if ($jobSigs): ?>
@@ -229,13 +229,9 @@ include 'layout.php';
     <div style="padding:20px;color:var(--muted);font-size:13px">No job postings fetched. Try <strong style="color:var(--text)">Re-Enrich</strong>.</div>
     <?php endif; ?>
   </div>
-
 </div>
 
-<!-- RIGHT COLUMN -->
 <div style="display:flex;flex-direction:column;gap:20px">
-
-  <!-- News Signals -->
   <div class="card">
     <div style="padding:16px 20px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600">&#128240; News &amp; Signals <span style="color:var(--muted);font-weight:400">(<?= count($newsSigs) ?> found)</span></div>
     <?php if ($newsSigs): ?>
@@ -254,7 +250,6 @@ include 'layout.php';
     <div style="padding:20px;color:var(--muted);font-size:13px">No news signals found. Try re-enriching.</div>
     <?php endif; ?>
   </div>
-
 </div>
 </div>
 
@@ -296,18 +291,15 @@ async function extractFromPaste() {
         setTimeout(function(){ location.reload(); }, 1500);
       } else {
         result.innerHTML = '<span style="color:var(--warning)">No known tools found. Try pasting the full job description.</span>';
-        btn.textContent = 'Extract Tech Stack';
-        btn.disabled = false;
+        btn.textContent = 'Extract Tech Stack'; btn.disabled = false;
       }
     } else {
       result.innerHTML = '<span style="color:var(--danger)">Error: ' + (d.error || 'unknown') + '</span>';
-      btn.textContent = 'Extract Tech Stack';
-      btn.disabled = false;
+      btn.textContent = 'Extract Tech Stack'; btn.disabled = false;
     }
   } catch(e) {
     document.getElementById('extractResult').innerHTML = '<span style="color:var(--danger)">Request failed: ' + e.message + '</span>';
-    btn.textContent = 'Extract Tech Stack';
-    btn.disabled = false;
+    btn.textContent = 'Extract Tech Stack'; btn.disabled = false;
   }
 }
 
@@ -315,29 +307,25 @@ async function enrichNow() {
   var btn = document.getElementById('enrichBtn');
   btn.textContent = 'Enriching...';
   btn.disabled = true;
-  showEnrichStatus('<span style="color:var(--muted)">Fetching signals… this may take 15-20 seconds.</span>', false);
+  showEnrichStatus('<span style="color:var(--muted)">Fetching signals... this may take 15-20 seconds.</span>', false);
   try {
     var r = await fetch('api/enrich.php?id=' + companyId, {method:'POST'});
     var text = await r.text();
     var d;
     try { d = JSON.parse(text); } catch(e) {
       showEnrichStatus('PHP error: <pre style="font-size:11px;white-space:pre-wrap;margin:6px 0 0">' + text.substring(0, 800) + '</pre>', true);
-      btn.textContent = '&#9889; Re-Enrich';
-      btn.disabled = false;
-      return;
+      btn.textContent = '&#9889; Re-Enrich'; btn.disabled = false; return;
     }
     if (d.ok) {
-      showEnrichStatus('&#10003; Enriched! Score: <strong>' + d.score + '</strong> (' + d.priority + '). News: ' + d.news_count + ', Jobs: ' + d.jobs_count + ', Tech: ' + d.tech_found + '. Reloading…', false);
+      showEnrichStatus('&#10003; Enriched! Score: <strong>' + d.score + '</strong> (' + d.priority + '). News: ' + d.news_count + ', Jobs: ' + d.jobs_count + ', Tech: ' + d.tech_found + '. Reloading...', false);
       setTimeout(function(){ location.reload(); }, 2200);
     } else {
       showEnrichStatus('Error: ' + (d.error || 'unknown error'), true);
-      btn.textContent = '&#9889; Re-Enrich';
-      btn.disabled = false;
+      btn.textContent = '&#9889; Re-Enrich'; btn.disabled = false;
     }
   } catch(e) {
     showEnrichStatus('Network error: ' + e.message, true);
-    btn.textContent = '&#9889; Re-Enrich';
-    btn.disabled = false;
+    btn.textContent = '&#9889; Re-Enrich'; btn.disabled = false;
   }
 }
 
