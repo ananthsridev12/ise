@@ -17,3 +17,10 @@ defined('ADZUNA_APP_KEY')  || define('ADZUNA_APP_KEY',  '');
 
 defined('APP_NAME')       || define('APP_NAME',       'ISE - Intent Signal Engine');
 defined('ITEMS_PER_PAGE') || define('ITEMS_PER_PAGE', 25);
+
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+require_once __DIR__ . '/lib/DB.php';
+require_once __DIR__ . '/lib/Auth.php';
