@@ -98,7 +98,7 @@ include 'layout.php';
   </div>
 </div>
 
-<div id="enrichStatus" style="display:none;margin-bottom:16px" class="card card-body"></div>
+<div id="enrichStatus" style="display:none;margin-bottom:16px;padding:12px 18px;border-radius:8px;font-size:13px"></div>
 <div id="genStatusTop" style="display:none;margin-bottom:16px;padding:12px 18px;border-radius:8px;font-size:13px"></div>
 
 <!-- Email Drafts — full width above the columns -->
@@ -261,6 +261,15 @@ include 'layout.php';
 <script>
 var companyId = <?= $id ?>;
 
+function showEnrichStatus(html, isError) {
+  var el = document.getElementById('enrichStatus');
+  el.style.display = 'block';
+  el.style.background = isError ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.08)';
+  el.style.border = '1px solid ' + (isError ? 'rgba(239,68,68,0.4)' : 'rgba(34,197,94,0.3)');
+  el.style.color = isError ? '#ef4444' : 'var(--text)';
+  el.innerHTML = html;
+}
+
 function togglePasteBox() {
   var box = document.getElementById('pasteBox');
   box.style.display = box.style.display === 'none' ? 'block' : 'none';
@@ -277,20 +286,26 @@ async function extractFromPaste() {
   fd.append('text', text);
   fd.append('source_title', document.getElementById('pasteTitle').value || 'Manual paste');
   fd.append('source_url', document.getElementById('pasteUrl').value || '');
-  var r = await fetch('api/extract_tech.php', {method:'POST', body:fd});
-  var d = await r.json();
-  var result = document.getElementById('extractResult');
-  if (d.ok) {
-    if (d.found && d.found.length > 0) {
-      result.innerHTML = '<span style="color:var(--success)">&#10003; Found: <strong>' + d.found.join(', ') + '</strong>. Reloading...</span>';
-      setTimeout(function(){ location.reload(); }, 1500);
+  try {
+    var r = await fetch('api/extract_tech.php', {method:'POST', body:fd});
+    var d = await r.json();
+    var result = document.getElementById('extractResult');
+    if (d.ok) {
+      if (d.found && d.found.length > 0) {
+        result.innerHTML = '<span style="color:var(--success)">&#10003; Found: <strong>' + d.found.join(', ') + '</strong>. Reloading...</span>';
+        setTimeout(function(){ location.reload(); }, 1500);
+      } else {
+        result.innerHTML = '<span style="color:var(--warning)">No known tools found. Try pasting the full job description.</span>';
+        btn.textContent = 'Extract Tech Stack';
+        btn.disabled = false;
+      }
     } else {
-      result.innerHTML = '<span style="color:var(--warning)">No known tools found. Try pasting the full job description.</span>';
+      result.innerHTML = '<span style="color:var(--danger)">Error: ' + (d.error || 'unknown') + '</span>';
       btn.textContent = 'Extract Tech Stack';
       btn.disabled = false;
     }
-  } else {
-    result.innerHTML = '<span style="color:var(--danger)">Error: ' + (d.error || 'unknown') + '</span>';
+  } catch(e) {
+    document.getElementById('extractResult').innerHTML = '<span style="color:var(--danger)">Request failed: ' + e.message + '</span>';
     btn.textContent = 'Extract Tech Stack';
     btn.disabled = false;
   }
@@ -298,18 +313,29 @@ async function extractFromPaste() {
 
 async function enrichNow() {
   var btn = document.getElementById('enrichBtn');
-  var status = document.getElementById('enrichStatus');
   btn.textContent = 'Enriching...';
   btn.disabled = true;
-  status.style.display = 'block';
-  status.innerHTML = '<span style="color:var(--muted)">Fetching signals... this may take 15-20 seconds.</span>';
-  var r = await fetch('api/enrich.php?id=' + companyId, {method:'POST'});
-  var d = await r.json();
-  if (d.ok) {
-    status.innerHTML = '<span style="color:var(--success)">&#10003; Enriched! Score: ' + d.score + ' (' + d.priority + '). News: ' + d.news_count + ', Jobs: ' + d.jobs_count + ', Tech: ' + d.tech_found + '. Reloading...</span>';
-    setTimeout(function(){ location.reload(); }, 2200);
-  } else {
-    status.innerHTML = '<span style="color:var(--danger)">Error: ' + (d.error || 'unknown error') + '</span>';
+  showEnrichStatus('<span style="color:var(--muted)">Fetching signals… this may take 15-20 seconds.</span>', false);
+  try {
+    var r = await fetch('api/enrich.php?id=' + companyId, {method:'POST'});
+    var text = await r.text();
+    var d;
+    try { d = JSON.parse(text); } catch(e) {
+      showEnrichStatus('PHP error: <pre style="font-size:11px;white-space:pre-wrap;margin:6px 0 0">' + text.substring(0, 800) + '</pre>', true);
+      btn.textContent = '&#9889; Re-Enrich';
+      btn.disabled = false;
+      return;
+    }
+    if (d.ok) {
+      showEnrichStatus('&#10003; Enriched! Score: <strong>' + d.score + '</strong> (' + d.priority + '). News: ' + d.news_count + ', Jobs: ' + d.jobs_count + ', Tech: ' + d.tech_found + '. Reloading…', false);
+      setTimeout(function(){ location.reload(); }, 2200);
+    } else {
+      showEnrichStatus('Error: ' + (d.error || 'unknown error'), true);
+      btn.textContent = '&#9889; Re-Enrich';
+      btn.disabled = false;
+    }
+  } catch(e) {
+    showEnrichStatus('Network error: ' + e.message, true);
     btn.textContent = '&#9889; Re-Enrich';
     btn.disabled = false;
   }
@@ -324,18 +350,35 @@ async function generateEmail(touchNumber) {
   if (btnTop) { btnTop.disabled = true; btnTop.textContent = 'Generating...'; }
   if (status) status.innerHTML = '<span style="color:var(--muted)">Calling AI provider...</span>';
   if (statusTop) { statusTop.style.display='block'; statusTop.style.background='rgba(99,102,241,0.08)'; statusTop.style.border='1px solid rgba(99,102,241,0.3)'; statusTop.style.color='var(--muted)'; statusTop.textContent='Calling AI provider...'; }
-  var r = await fetch('api/generate_email.php?company_id=' + companyId + '&touch_number=' + touchNumber);
-  var d = await r.json();
-  if (d.ok) {
-    var msg = '&#10003; Touch #' + d.touch_number + ' generated via ' + d.provider.toUpperCase();
-    if (d.matched_service) msg += ' &middot; Service: ' + d.matched_service;
-    if (d.persona) msg += ' &middot; Persona: ' + d.persona;
-    msg += '. Reloading...';
-    if (status) status.innerHTML = '<span style="color:var(--success)">' + msg + '</span>';
-    if (statusTop) { statusTop.style.background='rgba(34,197,94,0.1)'; statusTop.style.border='1px solid rgba(34,197,94,0.4)'; statusTop.style.color='#22c55e'; statusTop.innerHTML=msg; }
-    setTimeout(function(){ location.reload(); }, 1800);
-  } else {
-    var err = d.error || 'Generation failed. Check AI settings at /settings.php';
+  try {
+    var r = await fetch('api/generate_email.php?company_id=' + companyId + '&touch_number=' + touchNumber);
+    var text = await r.text();
+    var d;
+    try { d = JSON.parse(text); } catch(e) {
+      var err = 'PHP error: ' + text.substring(0, 400);
+      if (status) status.innerHTML = '<span style="color:var(--danger)">' + err + '</span>';
+      if (statusTop) { statusTop.style.background='rgba(239,68,68,0.1)'; statusTop.style.border='1px solid rgba(239,68,68,0.4)'; statusTop.style.color='#ef4444'; statusTop.textContent=err; }
+      if (btn) { btn.disabled=false; btn.textContent='&#10024; Generate Touch #'+touchNumber; }
+      if (btnTop) { btnTop.disabled=false; btnTop.textContent='&#10024; '+(touchNumber===1?'Generate Email':'Generate Touch #'+touchNumber); }
+      return;
+    }
+    if (d.ok) {
+      var msg = '&#10003; Touch #' + d.touch_number + ' generated via ' + d.provider.toUpperCase();
+      if (d.matched_service) msg += ' &middot; Service: ' + d.matched_service;
+      if (d.persona) msg += ' &middot; Persona: ' + d.persona;
+      msg += '. Reloading...';
+      if (status) status.innerHTML = '<span style="color:var(--success)">' + msg + '</span>';
+      if (statusTop) { statusTop.style.background='rgba(34,197,94,0.1)'; statusTop.style.border='1px solid rgba(34,197,94,0.4)'; statusTop.style.color='#22c55e'; statusTop.innerHTML=msg; }
+      setTimeout(function(){ location.reload(); }, 1800);
+    } else {
+      var err = d.error || 'Generation failed. Check AI settings at /settings.php';
+      if (status) status.innerHTML = '<span style="color:var(--danger)">' + err + '</span>';
+      if (statusTop) { statusTop.style.background='rgba(239,68,68,0.1)'; statusTop.style.border='1px solid rgba(239,68,68,0.4)'; statusTop.style.color='#ef4444'; statusTop.textContent=err; }
+      if (btn) { btn.disabled=false; btn.textContent='&#10024; Generate Touch #'+touchNumber; }
+      if (btnTop) { btnTop.disabled=false; btnTop.textContent='&#10024; '+(touchNumber===1?'Generate Email':'Generate Touch #'+touchNumber); }
+    }
+  } catch(e) {
+    var err = 'Network error: ' + e.message;
     if (status) status.innerHTML = '<span style="color:var(--danger)">' + err + '</span>';
     if (statusTop) { statusTop.style.background='rgba(239,68,68,0.1)'; statusTop.style.border='1px solid rgba(239,68,68,0.4)'; statusTop.style.color='#ef4444'; statusTop.textContent=err; }
     if (btn) { btn.disabled=false; btn.textContent='&#10024; Generate Touch #'+touchNumber; }
