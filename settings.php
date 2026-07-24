@@ -26,6 +26,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $msg = 'Settings saved.';
 }
 
+$currentProvider = $ai['provider'] ?? 'gemini';
+$currentModel    = $ai['model']    ?? '';
+
 include 'layout.php';
 ?>
 
@@ -48,28 +51,34 @@ include 'layout.php';
     <div style="padding:20px;display:flex;flex-direction:column;gap:16px">
       <div class="form-group">
         <label>Active Provider</label>
-        <select name="provider">
-          <option value="gemini"  <?= ($ai['provider'] ?? 'gemini') === 'gemini'  ? 'selected' : '' ?>>Google Gemini</option>
-          <option value="claude"  <?= ($ai['provider'] ?? '') === 'claude'  ? 'selected' : '' ?>>Anthropic Claude</option>
-          <option value="openai"  <?= ($ai['provider'] ?? '') === 'openai'  ? 'selected' : '' ?>>OpenAI ChatGPT</option>
+        <select name="provider" id="providerSelect" onchange="updateModelOptions()">
+          <option value="gemini" <?= $currentProvider === 'gemini' ? 'selected' : '' ?>>Google Gemini</option>
+          <option value="claude" <?= $currentProvider === 'claude' ? 'selected' : '' ?>>Anthropic Claude</option>
+          <option value="openai" <?= $currentProvider === 'openai' ? 'selected' : '' ?>>OpenAI ChatGPT</option>
         </select>
         <div style="font-size:11px;color:var(--muted);margin-top:4px">Add API keys for all providers; switch without losing them.</div>
       </div>
+
+      <div class="form-group">
+        <label>Model</label>
+        <select name="model" id="modelSelect"></select>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Recommended model pre-selected. Switch to a more powerful one if needed.</div>
+      </div>
+
       <div class="form-group">
         <label>Gemini API Key</label>
         <input type="password" name="gemini_key" value="<?= htmlspecialchars($ai['gemini_key'] ?? '') ?>" placeholder="AIza..." autocomplete="new-password">
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Get key at <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--accent)">aistudio.google.com</a> &mdash; free tier available</div>
       </div>
       <div class="form-group">
         <label>Claude API Key</label>
         <input type="password" name="claude_key" value="<?= htmlspecialchars($ai['claude_key'] ?? '') ?>" placeholder="sk-ant-..." autocomplete="new-password">
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Get key at <a href="https://console.anthropic.com/" target="_blank" style="color:var(--accent)">console.anthropic.com</a></div>
       </div>
       <div class="form-group">
         <label>OpenAI API Key</label>
         <input type="password" name="openai_key" value="<?= htmlspecialchars($ai['openai_key'] ?? '') ?>" placeholder="sk-..." autocomplete="new-password">
-      </div>
-      <div class="form-group">
-        <label>Model override <span style="color:var(--muted);font-weight:400">(leave blank for default)</span></label>
-        <input type="text" name="model" value="<?= htmlspecialchars($ai['model'] ?? '') ?>" placeholder="e.g. gemini-1.5-pro, gpt-4o, claude-opus-4-8">
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Get key at <a href="https://platform.openai.com/api-keys" target="_blank" style="color:var(--accent)">platform.openai.com</a></div>
       </div>
     </div>
   </div>
@@ -98,7 +107,7 @@ include 'layout.php';
       </div>
       <div class="form-group">
         <label>Custom Instructions <span style="color:var(--muted);font-weight:400">(appended to every AI prompt)</span></label>
-        <textarea name="custom_instructions" rows="4" placeholder="e.g. Always mention our ISO certification. Never use the word 'leverage'."><?= htmlspecialchars($ai['custom_instructions'] ?? '') ?></textarea>
+        <textarea name="custom_instructions" rows="4" placeholder="e.g. Always mention our ISO certification. Never use the word &apos;leverage&apos;."><?= htmlspecialchars($ai['custom_instructions'] ?? '') ?></textarea>
       </div>
     </div>
   </div>
@@ -115,6 +124,47 @@ include 'layout.php';
 </div>
 
 <script>
+var providerModels = {
+  gemini: [
+    { value: 'gemini-2.0-flash',              label: 'gemini-2.0-flash (recommended)' },
+    { value: 'gemini-2.5-flash-preview-05-20', label: 'gemini-2.5-flash-preview' },
+    { value: 'gemini-1.5-flash',              label: 'gemini-1.5-flash' },
+    { value: 'gemini-1.5-pro',                label: 'gemini-1.5-pro' },
+  ],
+  claude: [
+    { value: 'claude-haiku-4-5-20251001', label: 'claude-haiku-4-5 (recommended, fastest)' },
+    { value: 'claude-sonnet-4-5',         label: 'claude-sonnet-4-5 (balanced)' },
+    { value: 'claude-opus-4-8',           label: 'claude-opus-4-8 (most capable)' },
+  ],
+  openai: [
+    { value: 'gpt-4o-mini',   label: 'gpt-4o-mini (recommended, fast)' },
+    { value: 'gpt-4o',        label: 'gpt-4o (more capable)' },
+    { value: 'gpt-4-turbo',   label: 'gpt-4-turbo' },
+    { value: 'gpt-3.5-turbo', label: 'gpt-3.5-turbo (cheapest)' },
+  ]
+};
+
+var savedModel = <?= json_encode($currentModel) ?>;
+
+function updateModelOptions() {
+  var provider = document.getElementById('providerSelect').value;
+  var sel      = document.getElementById('modelSelect');
+  var options  = providerModels[provider] || [];
+  sel.innerHTML = '';
+  options.forEach(function(m) {
+    var opt    = document.createElement('option');
+    opt.value  = m.value;
+    opt.textContent = m.label;
+    if (m.value === savedModel) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  // If savedModel not found for this provider, default to first (recommended)
+  if (!sel.value) sel.selectedIndex = 0;
+}
+
+// Init on page load
+updateModelOptions();
+
 async function testAIConnection(btn) {
   var origText = btn.textContent;
   btn.disabled = true; btn.textContent = 'Testing...';
@@ -122,10 +172,17 @@ async function testAIConnection(btn) {
   res.textContent = '';
   try {
     var r = await fetch('api/test_ai.php');
-    var d = await r.json();
+    var text = await r.text();
+    var d;
+    try { d = JSON.parse(text); } catch(e) {
+      res.style.color = 'var(--danger)';
+      res.textContent = 'PHP error: ' + text.substring(0, 200);
+      btn.disabled = false; btn.textContent = origText;
+      return;
+    }
     if (d.ok) {
       res.style.color = 'var(--success)';
-      res.textContent = '✓ ' + d.provider + ': ' + d.response;
+      res.textContent = '✓ ' + d.provider.toUpperCase() + ': ' + d.response;
     } else {
       res.style.color = 'var(--danger)';
       res.textContent = '✗ ' + (d.error || 'Connection failed.');

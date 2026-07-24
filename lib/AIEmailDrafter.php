@@ -1,20 +1,12 @@
 <?php
 class AIEmailDrafter {
 
-    /**
-     * Draft an email, optionally continuing an existing conversation thread.
-     * Returns subject, body, angle, provider, prompt (user message), messages (JSON), system_prompt.
-     */
     public static function draft($company, $scoreData, $techStack, $service, $sender, $tone, $aiSettings, $touchNumber = 1, $priorSubject = '', $persona = null, $thread = null) {
         $provider = $aiSettings['provider'] ?? 'gemini';
 
-        // Static KB context — same for every email to this service/sender combo (cacheable)
         $systemPrompt = self::buildSystemPrompt($service, $sender, $tone, $aiSettings);
+        $userMessage  = self::buildUserMessage($company, $scoreData, $techStack, $touchNumber, $priorSubject, $persona, $aiSettings);
 
-        // Dynamic per-company context — changes per company and per touch
-        $userMessage = self::buildUserMessage($company, $scoreData, $techStack, $touchNumber, $priorSubject, $persona, $aiSettings);
-
-        // Load existing conversation history from thread
         $messages = array();
         if ($thread && !empty($thread['messages'])) {
             $messages = json_decode($thread['messages'], true) ?: array();
@@ -25,7 +17,6 @@ class AIEmailDrafter {
         if ($provider === 'claude' && !empty($aiSettings['claude_key'])) {
             $raw = self::callClaude($messages, $systemPrompt, $aiSettings['claude_key'], $aiSettings['model'] ?? '');
         } elseif ($provider === 'gemini' && !empty($aiSettings['gemini_key'])) {
-            // Gemini: flatten system + conversation into a single prompt string
             $combined = $systemPrompt . "\n\n" . self::flattenMessages($messages);
             $raw = self::callGemini($combined, $aiSettings['gemini_key'], $aiSettings['model'] ?? '');
         } elseif ($provider === 'openai' && !empty($aiSettings['openai_key'])) {
@@ -44,7 +35,7 @@ class AIEmailDrafter {
             );
         }
 
-        $parsed    = self::parseResponse($raw);
+        $parsed     = self::parseResponse($raw);
         $messages[] = array('role' => 'assistant', 'content' => $raw);
 
         return array(
@@ -60,24 +51,100 @@ class AIEmailDrafter {
 
     public static function testConnection($aiSettings): array {
         $provider = $aiSettings['provider'] ?? 'gemini';
-        $testMsg  = array(array('role' => 'user', 'content' => 'Respond with exactly the text: Connection successful.'));
-        $raw = '';
-        if ($provider === 'claude' && !empty($aiSettings['claude_key'])) {
-            $raw = self::callClaude($testMsg, '', $aiSettings['claude_key'], $aiSettings['model'] ?? '');
-        } elseif ($provider === 'gemini' && !empty($aiSettings['gemini_key'])) {
-            $raw = self::callGemini('Respond with exactly the text: Connection successful.', $aiSettings['gemini_key'], $aiSettings['model'] ?? '');
-        } elseif ($provider === 'openai' && !empty($aiSettings['openai_key'])) {
-            $raw = self::callOpenAI($testMsg, '', $aiSettings['openai_key'], $aiSettings['model'] ?? '');
+        $keyField = $provider . '_key';
+
+        if (empty($aiSettings[$keyField])) {
+            return array('ok' => false, 'error' => "No {$provider} API key saved. Add it in Settings and save first.");
         }
-        if (!$raw) {
-            $keyField = $provider . '_key';
-            if (empty($aiSettings[$keyField])) return array('ok' => false, 'error' => "No {$provider} API key saved.");
-            return array('ok' => false, 'error' => "No response from {$provider}. Check the API key.");
+
+        $model = $aiSettings['model'] ?? '';
+
+        if ($provider === 'gemini') {
+            $model   = $model ?: 'gemini-2.0-flash';
+            $url     = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$aiSettings['gemini_key']}";
+            $payload = json_encode(array(
+                'contents'         => array(array('parts' => array(array('text' => 'Respond with exactly: Connection successful.')))),
+                'generationConfig' => array('maxOutputTokens' => 50),
+            ));
+            $ctx = stream_context_create(array('http' => array(
+                'method'        => 'POST',
+                'header'        => "Content-Type: application/json\r\n",
+                'content'       => $payload,
+                'timeout'       => 30,
+                'ignore_errors' => true,
+            )));
+            $raw = @file_get_contents($url, false, $ctx);
+            if ($raw === false || $raw === '') {
+                return array('ok' => false, 'error' => 'No response from Gemini. The server may be blocking outbound HTTPS, or the API key is invalid. Try Claude or OpenAI instead.');
+            }
+            $data = json_decode($raw, true);
+            if (isset($data['error'])) {
+                return array('ok' => false, 'error' => 'Gemini API error: ' . ($data['error']['message'] ?? json_encode($data['error'])));
+            }
+            $text = $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
+            if (!$text) return array('ok' => false, 'error' => 'Gemini returned empty content. Model: ' . $model);
+            return array('ok' => true, 'provider' => 'gemini', 'response' => trim($text));
         }
-        return array('ok' => true, 'provider' => $provider, 'response' => trim($raw));
+
+        if ($provider === 'claude') {
+            $model   = $model ?: 'claude-haiku-4-5-20251001';
+            $url     = 'https://api.anthropic.com/v1/messages';
+            $payload = json_encode(array(
+                'model'      => $model,
+                'max_tokens' => 50,
+                'messages'   => array(array('role' => 'user', 'content' => 'Respond with exactly: Connection successful.')),
+            ));
+            $ctx = stream_context_create(array('http' => array(
+                'method'        => 'POST',
+                'header'        => "Content-Type: application/json\r\nx-api-key: {$aiSettings['claude_key']}\r\nanthropic-version: 2023-06-01\r\n",
+                'content'       => $payload,
+                'timeout'       => 30,
+                'ignore_errors' => true,
+            )));
+            $raw = @file_get_contents($url, false, $ctx);
+            if ($raw === false || $raw === '') {
+                return array('ok' => false, 'error' => 'No response from Claude. Server may be blocking outbound HTTPS.');
+            }
+            $data = json_decode($raw, true);
+            if (isset($data['error'])) {
+                return array('ok' => false, 'error' => 'Claude API error: ' . ($data['error']['message'] ?? json_encode($data['error'])));
+            }
+            $text = $data['content'][0]['text'] ?? '';
+            if (!$text) return array('ok' => false, 'error' => 'Claude returned empty content. Model: ' . $model);
+            return array('ok' => true, 'provider' => 'claude', 'response' => trim($text));
+        }
+
+        if ($provider === 'openai') {
+            $model   = $model ?: 'gpt-4o-mini';
+            $url     = 'https://api.openai.com/v1/chat/completions';
+            $payload = json_encode(array(
+                'model'      => $model,
+                'max_tokens' => 50,
+                'messages'   => array(array('role' => 'user', 'content' => 'Respond with exactly: Connection successful.')),
+            ));
+            $ctx = stream_context_create(array('http' => array(
+                'method'        => 'POST',
+                'header'        => "Content-Type: application/json\r\nAuthorization: Bearer {$aiSettings['openai_key']}\r\n",
+                'content'       => $payload,
+                'timeout'       => 30,
+                'ignore_errors' => true,
+            )));
+            $raw = @file_get_contents($url, false, $ctx);
+            if ($raw === false || $raw === '') {
+                return array('ok' => false, 'error' => 'No response from OpenAI. Server may be blocking outbound HTTPS.');
+            }
+            $data = json_decode($raw, true);
+            if (isset($data['error'])) {
+                return array('ok' => false, 'error' => 'OpenAI API error: ' . ($data['error']['message'] ?? json_encode($data['error'])));
+            }
+            $text = $data['choices'][0]['message']['content'] ?? '';
+            if (!$text) return array('ok' => false, 'error' => 'OpenAI returned empty content. Model: ' . $model);
+            return array('ok' => true, 'provider' => 'openai', 'response' => trim($text));
+        }
+
+        return array('ok' => false, 'error' => 'Unknown provider: ' . $provider);
     }
 
-    // --- Static KB context (same per service/sender — cached at Claude API level) ---
     private static function buildSystemPrompt($service, $sender, $tone, $aiSettings) {
         $kbCompany   = DB::fetchOne('SELECT * FROM kb_company LIMIT 1') ?: array();
         $companyName = $kbCompany['name'] ?? 'SolidPro';
@@ -128,7 +195,6 @@ class AIEmailDrafter {
         return $p;
     }
 
-    // --- Dynamic per-company context (changes per company and per touch) ---
     private static function buildUserMessage($company, $scoreData, $techStack, $touchNumber, $priorSubject, $persona, $aiSettings) {
         $techTools  = $techStack ? implode(', ', array_column($techStack, 'tool')) : 'Not detected';
         $signalList = $scoreData['signal_types'] ? implode(', ', $scoreData['signal_types']) : 'General';
@@ -145,7 +211,7 @@ class AIEmailDrafter {
 
         if ($persona) {
             $msg .= "=== BUYER PERSONA ===\n"
-                . "{$persona['name']} — {$persona['title']}\n"
+                . "{$persona['name']} - {$persona['title']}\n"
                 . (!empty($persona['goals'])       ? "Their goals: {$persona['goals']}\n"             : '')
                 . (!empty($persona['pain_points']) ? "Their pain points: {$persona['pain_points']}\n" : '')
                 . (!empty($persona['email_hook'])  ? "Best opening angle: {$persona['email_hook']}\n" : '')
@@ -163,7 +229,6 @@ class AIEmailDrafter {
         return $msg;
     }
 
-    // Flatten messages array into a readable string (for Gemini which uses a single prompt)
     private static function flattenMessages($messages) {
         $out = '';
         foreach ($messages as $m) {
@@ -187,21 +252,23 @@ class AIEmailDrafter {
     }
 
     private static function callGemini($prompt, $key, $model) {
-        $model = $model ?: 'gemini-1.5-flash';
-        $url   = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$key}";
+        $model   = $model ?: 'gemini-2.0-flash';
+        $url     = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$key}";
         $payload = json_encode(array(
             'contents'         => array(array('parts' => array(array('text' => $prompt)))),
             'generationConfig' => array('temperature' => 0.7, 'maxOutputTokens' => 1024),
         ));
         $ctx = stream_context_create(array('http' => array(
-            'method'  => 'POST',
-            'header'  => "Content-Type: application/json\r\n",
-            'content' => $payload,
-            'timeout' => 30,
+            'method'        => 'POST',
+            'header'        => "Content-Type: application/json\r\n",
+            'content'       => $payload,
+            'timeout'       => 30,
+            'ignore_errors' => true,
         )));
         $raw  = @file_get_contents($url, false, $ctx);
         if (!$raw) return '';
         $data = json_decode($raw, true);
+        if (isset($data['error'])) return '';
         return $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
     }
 
@@ -214,23 +281,24 @@ class AIEmailDrafter {
             'messages'   => $messages,
         );
         if ($systemPrompt) {
-            // cache_control marks this block for server-side prompt caching (~70% token savings on repeated calls)
             $payload['system'] = array(
                 array('type' => 'text', 'text' => $systemPrompt, 'cache_control' => array('type' => 'ephemeral'))
             );
         }
         $ctx = stream_context_create(array('http' => array(
-            'method'  => 'POST',
-            'header'  => "Content-Type: application/json\r\n"
-                       . "x-api-key: {$key}\r\n"
-                       . "anthropic-version: 2023-06-01\r\n"
-                       . "anthropic-beta: prompt-caching-2024-07-31\r\n",
-            'content' => json_encode($payload),
-            'timeout' => 30,
+            'method'        => 'POST',
+            'header'        => "Content-Type: application/json\r\n"
+                             . "x-api-key: {$key}\r\n"
+                             . "anthropic-version: 2023-06-01\r\n"
+                             . "anthropic-beta: prompt-caching-2024-07-31\r\n",
+            'content'       => json_encode($payload),
+            'timeout'       => 30,
+            'ignore_errors' => true,
         )));
         $raw  = @file_get_contents($url, false, $ctx);
         if (!$raw) return '';
         $data = json_decode($raw, true);
+        if (isset($data['error'])) return '';
         return $data['content'][0]['text'] ?? '';
     }
 
@@ -247,14 +315,16 @@ class AIEmailDrafter {
             'temperature' => 0.7,
         ));
         $ctx = stream_context_create(array('http' => array(
-            'method'  => 'POST',
-            'header'  => "Content-Type: application/json\r\nAuthorization: Bearer {$key}\r\n",
-            'content' => $payload,
-            'timeout' => 30,
+            'method'        => 'POST',
+            'header'        => "Content-Type: application/json\r\nAuthorization: Bearer {$key}\r\n",
+            'content'       => $payload,
+            'timeout'       => 30,
+            'ignore_errors' => true,
         )));
         $raw  = @file_get_contents($url, false, $ctx);
         if (!$raw) return '';
         $data = json_decode($raw, true);
+        if (isset($data['error'])) return '';
         return $data['choices'][0]['message']['content'] ?? '';
     }
 }
