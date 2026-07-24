@@ -66,7 +66,7 @@ include 'layout.php';
 </div>
 
 <!-- Score Banner -->
-<div style="display:grid;grid-template-columns:140px 1fr;gap:0;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:24px;margin-bottom:24px;align-items:center">
+<div class="score-banner" style="display:grid;grid-template-columns:140px 1fr;gap:0;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:24px;margin-bottom:24px;align-items:center">
   <div style="text-align:center;padding-right:24px;border-right:1px solid var(--border)">
     <div style="font-size:52px;font-weight:800;line-height:1;color:<?= $scoreColor ?>"><?= $company['score'] ?? 0 ?></div>
     <div style="font-size:11px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.05em">Intent Score</div>
@@ -114,8 +114,8 @@ include 'layout.php';
   <?php foreach ($emails as $em): ?>
   <?php $emailStatus = $em['status'] ?? 'draft'; ?>
   <div class="card" style="margin-bottom:16px" id="emailCard<?= $em['id'] ?>">
-    <div style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-      <div style="display:flex;align-items:center;gap:10px">
+    <div class="email-card-header" style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <span style="font-size:13px;font-weight:600">&#9993; Touch #<?= $em['touch_number'] ?? 1 ?></span>
         <?php if (!empty($em['ai_provider'])): ?>
         <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;background:rgba(99,102,241,0.15);color:#818cf8;letter-spacing:.05em"><?= strtoupper(htmlspecialchars($em['ai_provider'])) ?></span>
@@ -123,7 +123,6 @@ include 'layout.php';
         <?php if (!empty($em['matched_service_id']) && $matchedService): ?>
         <span style="font-size:11px;color:var(--muted)">&#8227; <?= htmlspecialchars($matchedService['name']) ?><?php if($matchedService['vertical_name']): ?> &middot; <?= htmlspecialchars($matchedService['vertical_name']) ?><?php endif; ?></span>
         <?php endif; ?>
-        <!-- Status badge -->
         <?php if ($emailStatus === 'sent'): ?>
         <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;background:rgba(34,197,94,0.12);color:var(--success)">&#10003; Sent</span>
         <?php elseif ($emailStatus === 'replied'): ?>
@@ -133,15 +132,15 @@ include 'layout.php';
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span style="font-size:11px;color:var(--muted)"><?= date('d M Y', strtotime($em['created_at'])) ?></span>
         <button onclick="copyEmail(<?= $em['id'] ?>)" class="btn btn-secondary btn-sm">&#128203; Copy</button>
-        <a href="mailto:?subject=<?= urlencode($em['subject']) ?>&body=<?= urlencode($em['body']) ?>" class="btn btn-ghost btn-sm">&#128232; Open in Mail</a>
+        <a href="mailto:?subject=<?= urlencode($em['subject']) ?>&body=<?= urlencode($em['body']) ?>" class="btn btn-ghost btn-sm">&#128232; Mail</a>
         <?php if ($emailStatus === 'draft'): ?>
-        <button onclick="markEmail(<?= $em['id'] ?>, 'sent')" class="btn btn-ghost btn-sm" style="color:var(--success)">&#10003; Mark Sent</button>
+        <button onclick="markEmail(<?= $em['id'] ?>, 'sent')" class="btn btn-ghost btn-sm" style="color:var(--success)">&#10003; Sent</button>
         <?php elseif ($emailStatus === 'sent'): ?>
-        <button onclick="markEmail(<?= $em['id'] ?>, 'replied')" class="btn btn-ghost btn-sm">&#8617; Mark Replied</button>
+        <button onclick="markEmail(<?= $em['id'] ?>, 'replied')" class="btn btn-ghost btn-sm">&#8617; Replied</button>
         <?php endif; ?>
       </div>
     </div>
-    <div style="padding:16px 20px;display:grid;grid-template-columns:1fr 1fr;gap:20px">
+    <div class="email-body-grid" style="padding:16px 20px;display:grid;grid-template-columns:1fr 1fr;gap:20px">
       <div>
         <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:600;margin-bottom:8px">Subject</div>
         <div style="font-size:14px;font-weight:600;line-height:1.4;color:var(--text)"><?= htmlspecialchars($em['subject']) ?></div>
@@ -173,7 +172,7 @@ include 'layout.php';
 </div>
 <?php endif; ?>
 
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+<div class="detail-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
 
 <div style="display:flex;flex-direction:column;gap:20px">
   <div class="card">
@@ -186,7 +185,7 @@ include 'layout.php';
       <div class="form-group"><label>Job Title (optional)</label><input type="text" id="pasteTitle" placeholder="e.g. SAP Consultant"></div>
       <div class="form-group"><label>Job URL (optional)</label><input type="url" id="pasteUrl"></div>
       <div class="form-group"><label>Job Description Text *</label><textarea id="pasteText" rows="7"></textarea></div>
-      <div style="display:flex;gap:8px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button onclick="extractFromPaste()" class="btn btn-primary btn-sm" id="extractBtn">Extract Tech Stack</button>
         <button onclick="togglePasteBox()" class="btn btn-ghost btn-sm">Cancel</button>
       </div>
@@ -225,9 +224,9 @@ include 'layout.php';
     <div>
       <?php foreach ($jobSigs as $sig): ?>
       <div style="padding:12px 20px;border-bottom:1px solid rgba(42,45,58,0.4)">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px;flex-wrap:wrap">
           <a href="<?= htmlspecialchars($sig['url']) ?>" target="_blank" style="color:var(--text);font-size:13px;font-weight:500;text-decoration:none"><?= htmlspecialchars($sig['title']) ?></a>
-          <span style="font-size:10px;color:var(--muted);background:rgba(255,255,255,0.05);padding:1px 6px;border-radius:4px"><?= htmlspecialchars($sig['source']) ?></span>
+          <span style="font-size:10px;color:var(--muted);background:rgba(255,255,255,0.05);padding:1px 6px;border-radius:4px;white-space:nowrap"><?= htmlspecialchars($sig['source']) ?></span>
         </div>
         <div style="color:var(--muted);font-size:11px"><?= htmlspecialchars($sig['published_date']) ?></div>
         <?php if ($sig['snippet']): ?>
