@@ -306,8 +306,7 @@ async function enrichNow() {
   var r = await fetch('api/enrich.php?id=' + companyId, {method:'POST'});
   var d = await r.json();
   if (d.ok) {
-    var aiNote = d.ai_used ? ' AI (' + (d.matched_service || 'no match') + ')' + (d.persona_used ? ' + persona: ' + d.persona_used : '') : ' template';
-    status.innerHTML = '<span style="color:var(--success)">&#10003; Done! Score: ' + d.score + ' (' + d.priority + '). News: ' + d.news_count + ', Jobs: ' + d.jobs_count + ', Tech: ' + d.tech_found + '. Email via' + aiNote + '. Reloading...</span>';
+    status.innerHTML = '<span style="color:var(--success)">&#10003; Enriched! Score: ' + d.score + ' (' + d.priority + '). News: ' + d.news_count + ', Jobs: ' + d.jobs_count + ', Tech: ' + d.tech_found + '. Reloading...</span>';
     setTimeout(function(){ location.reload(); }, 2200);
   } else {
     status.innerHTML = '<span style="color:var(--danger)">Error: ' + (d.error || 'unknown error') + '</span>';
