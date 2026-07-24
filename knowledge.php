@@ -116,7 +116,7 @@ $verticals = DB::fetchAll('SELECT id, name FROM kb_verticals ORDER BY name');
       </select>
     </div>
     <div class="form-group"><label>One-liner</label><input type="text" name="one_liner" id="svc_one_liner"></div>
-    <div class="form-group"><label>Signal Types <span style="color:var(--muted);font-size:11px">(comma-sep, e.g. M&A,ERP,Expansion)</span></label><input type="text" name="signal_types" id="svc_signal_types"></div>
+    <div class="form-group"><label>Signal Types <span style="color:var(--muted);font-size:11px">(comma-sep, e.g. M&amp;A,ERP,Expansion)</span></label><input type="text" name="signal_types" id="svc_signal_types"></div>
     <div class="form-group"><label>Tech Triggers <span style="color:var(--muted);font-size:11px">(comma-sep, e.g. SAP ECC,Oracle EBS)</span></label><input type="text" name="tech_triggers" id="svc_tech_triggers"></div>
     <div class="form-group"><label>Signal Keywords</label><input type="text" name="signal_keywords" id="svc_signal_keywords"></div>
     <div class="form-group"><label>Industries</label><input type="text" name="industries" id="svc_industries"></div>
@@ -187,7 +187,7 @@ $services  = DB::fetchAll('SELECT id, name FROM kb_services ORDER BY name');
     <div class="form-group"><label>Industries</label><input type="text" name="industries" id="icp_industries"></div>
     <div class="form-group"><label>Geographies</label><input type="text" name="geographies" id="icp_geographies" placeholder="North America, EMEA"></div>
     <div class="form-group"><label>Tech Stack Signals</label><input type="text" name="tech_stack_signals" id="icp_tech_stack_signals" placeholder="SAP ECC, Oracle EBS"></div>
-    <div class="form-group"><label>Trigger Events</label><textarea name="trigger_events" id="icp_trigger_events" rows="2" placeholder="M&A activity, ERP go-live, ..."></textarea></div>
+    <div class="form-group"><label>Trigger Events</label><textarea name="trigger_events" id="icp_trigger_events" rows="2" placeholder="M&amp;A activity, ERP go-live, ..."></textarea></div>
     <div class="form-group"><label>Perfect Fit</label><textarea name="perfect_fit" id="icp_perfect_fit" rows="2"></textarea></div>
     <div class="form-group"><label>Poor Fit / Disqualifiers</label><textarea name="disqualifiers" id="icp_disqualifiers" rows="2"></textarea></div>
     <div style="display:flex;gap:8px">
@@ -319,44 +319,90 @@ $services  = DB::fetchAll('SELECT id, name FROM kb_services ORDER BY name');
 <?php endif; ?>
 
 <script>
-async function kbSave(action, formId) {
-  var form = document.getElementById(formId);
-  var data = new URLSearchParams();
-  data.append('action', action);
-  var els = form.querySelectorAll('input,textarea,select');
-  for (var i = 0; i < els.length; i++) {
-    var el = els[i];
-    if (el.type === 'checkbox') {
-      data.append(el.name, el.checked ? '1' : '0');
-    } else {
-      data.append(el.name, el.value);
-    }
-  }
-  var r = await fetch('api/kb.php', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: data.toString()});
-  var d = await r.json();
+function showMsg(ok, text) {
   var msg = document.getElementById('saveMsg');
-  if (d.ok) {
-    msg.style.background = 'rgba(34,197,94,0.1)';
-    msg.style.color = 'var(--success)';
-    msg.style.border = '1px solid rgba(34,197,94,0.3)';
-    msg.textContent = d.message || 'Saved.';
-    msg.style.display = 'block';
-    setTimeout(function(){ location.reload(); }, 1200);
+  if (ok) {
+    msg.style.cssText = 'display:block;padding:10px 16px;border-radius:8px;margin-bottom:16px;font-size:13px;background:rgba(34,197,94,0.1);color:var(--success);border:1px solid rgba(34,197,94,0.3)';
   } else {
-    msg.style.background = 'rgba(239,68,68,0.1)';
-    msg.style.color = 'var(--danger)';
-    msg.style.border = '1px solid rgba(239,68,68,0.3)';
-    msg.textContent = d.error || 'Error saving.';
-    msg.style.display = 'block';
+    msg.style.cssText = 'display:block;padding:10px 16px;border-radius:8px;margin-bottom:16px;font-size:13px;background:rgba(239,68,68,0.1);color:var(--danger);border:1px solid rgba(239,68,68,0.3)';
+  }
+  msg.textContent = text;
+  msg.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+async function kbSave(action, formId) {
+  var btn = event.target;
+  var origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  try {
+    var form = document.getElementById(formId);
+    var data = new URLSearchParams();
+    data.append('action', action);
+    var els = form.querySelectorAll('input,textarea,select');
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      if (el.type === 'checkbox') {
+        data.append(el.name, el.checked ? '1' : '0');
+      } else {
+        data.append(el.name, el.value);
+      }
+    }
+
+    var r = await fetch('api/kb.php', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: data.toString()
+    });
+
+    if (!r.ok) {
+      showMsg(false, 'Server error ' + r.status + ': ' + r.statusText + '. Check that api/ folder has 755 permissions.');
+      btn.disabled = false;
+      btn.textContent = origText;
+      return;
+    }
+
+    var text = await r.text();
+    var d;
+    try {
+      d = JSON.parse(text);
+    } catch(e) {
+      showMsg(false, 'Server returned non-JSON. Response: ' + text.substring(0, 200));
+      btn.disabled = false;
+      btn.textContent = origText;
+      return;
+    }
+
+    if (d.ok) {
+      showMsg(true, '✓ Saved successfully.');
+      setTimeout(function(){ location.reload(); }, 900);
+    } else {
+      showMsg(false, d.error || 'Save failed.');
+      btn.disabled = false;
+      btn.textContent = origText;
+    }
+  } catch(e) {
+    showMsg(false, 'Network error: ' + e.message);
+    btn.disabled = false;
+    btn.textContent = origText;
   }
 }
 
 async function kbDelete(action, id) {
   if (!confirm('Delete this item?')) return;
-  var r = await fetch('api/kb.php', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'action='+action+'&id='+id});
-  var d = await r.json();
-  if (d.ok) location.reload();
-  else alert(d.error || 'Delete failed');
+  try {
+    var r = await fetch('api/kb.php', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'action=' + action + '&id=' + id
+    });
+    var d = await r.json();
+    if (d.ok) location.reload();
+    else showMsg(false, d.error || 'Delete failed');
+  } catch(e) {
+    showMsg(false, 'Network error: ' + e.message);
+  }
 }
 
 function editVertical(v) {
