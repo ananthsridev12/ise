@@ -1,4 +1,5 @@
 <?php
+ob_start();
 header('Content-Type: application/json');
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../lib/DB.php';
@@ -7,13 +8,21 @@ require_once __DIR__ . '/../lib/AIEmailDrafter.php';
 
 try {
     $companyId   = (int)($_POST['company_id'] ?? $_GET['company_id'] ?? 0);
-    $touchNumber = (int)($_POST['touch_number'] ?? 1);
+    $touchNumber = (int)($_POST['touch_number'] ?? $_GET['touch_number'] ?? 1);
     $senderId    = (int)($_POST['sender_id'] ?? 0);
 
-    if (!$companyId) { echo json_encode(array('error' => 'No company_id')); exit; }
+    if (!$companyId) {
+        ob_end_clean();
+        echo json_encode(array('error' => 'No company_id', 'ok' => false));
+        exit;
+    }
 
     $company = DB::fetchOne('SELECT * FROM companies WHERE id = ?', array($companyId));
-    if (!$company) { echo json_encode(array('error' => 'Company not found')); exit; }
+    if (!$company) {
+        ob_end_clean();
+        echo json_encode(array('error' => 'Company not found', 'ok' => false));
+        exit;
+    }
 
     $aiSettings = DB::fetchOne('SELECT * FROM ai_settings LIMIT 1') ?: array();
     $tone       = DB::fetchOne('SELECT * FROM kb_tone LIMIT 1');
@@ -76,6 +85,7 @@ try {
         'prompt_context'     => $email['prompt'],
     ));
 
+    ob_end_clean();
     echo json_encode(array(
         'ok'              => true,
         'subject'         => $email['subject'],
@@ -87,5 +97,6 @@ try {
     ));
 
 } catch (Exception $e) {
+    ob_end_clean();
     echo json_encode(array('error' => $e->getMessage(), 'ok' => false));
 }

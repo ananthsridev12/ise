@@ -1,9 +1,14 @@
 <?php
+ob_start();
 header('Content-Type: application/json');
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../lib/DB.php';
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') { echo json_encode(['error'=>'POST only']); exit; }
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    ob_end_clean();
+    echo json_encode(['error'=>'POST only']);
+    exit;
+}
 
 try {
     $imported = 0;
@@ -53,9 +58,10 @@ try {
         }
     }
 
+    ob_end_clean();
     echo json_encode(array('ok' => true, 'imported' => $imported, 'skipped' => $skipped));
 
 } catch (Exception $e) {
-    http_response_code(200); // return 200 so browser shows JSON, not generic 500 page
+    ob_end_clean();
     echo json_encode(array('error' => $e->getMessage(), 'ok' => false));
 }

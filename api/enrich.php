@@ -1,4 +1,5 @@
 <?php
+ob_start();
 header('Content-Type: application/json');
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../lib/DB.php';
@@ -8,10 +9,18 @@ require_once __DIR__ . '/../lib/Scorer.php';
 
 try {
     $id = (int)($_POST['id'] ?? $_GET['id'] ?? 0);
-    if (!$id) { echo json_encode(array('error' => 'No company id')); exit; }
+    if (!$id) {
+        ob_end_clean();
+        echo json_encode(array('error' => 'No company id', 'ok' => false));
+        exit;
+    }
 
     $company = DB::fetchOne('SELECT * FROM companies WHERE id = ?', array($id));
-    if (!$company) { echo json_encode(array('error' => 'Not found')); exit; }
+    if (!$company) {
+        ob_end_clean();
+        echo json_encode(array('error' => 'Not found', 'ok' => false));
+        exit;
+    }
 
     $country  = $company['country'] ?? 'US';
     $news     = NewsFetcher::fetchGoogleNews($company['name'], $country);
@@ -60,6 +69,7 @@ try {
         'status'       => 'enriched',
     ), 'id = ?', array($id));
 
+    ob_end_clean();
     echo json_encode(array(
         'ok'         => true,
         'score'      => $scoreData['score'],
@@ -70,5 +80,6 @@ try {
     ));
 
 } catch (Exception $e) {
+    ob_end_clean();
     echo json_encode(array('error' => $e->getMessage(), 'ok' => false));
 }
