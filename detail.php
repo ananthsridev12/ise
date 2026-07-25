@@ -1,6 +1,7 @@
 <?php
 require_once 'config.php';
 require_once 'lib/DB.php';
+require_once 'lib/EmailGenerator.php';
 
 $id = (int)($_GET['id'] ?? 0);
 if (!$id) { header('Location: companies.php'); exit; }
@@ -46,6 +47,16 @@ foreach ($emails as $em) { if (($em['touch_number'] ?? 1) > $maxTouch) $maxTouch
 $nextTouch = $maxTouch + 1;
 
 $currentPage = 'companies';
+
+// Detect generation mode for this tenant
+$generationMode = 'full';
+try {
+    $tenantId = Auth::tenantId();
+    if ($tenantId) {
+        $generationMode = EmailGenerator::detectMode((int)$tenantId);
+    }
+} catch (Exception $e) { /* graceful skip */ }
+
 include 'layout.php';
 ?>
 
@@ -64,6 +75,13 @@ include 'layout.php';
     <button onclick="generateEmail(<?= $nextTouch ?>)" class="btn btn-primary" id="genBtnTop">&#10024; <?= $emails ? 'Generate Touch #'.$nextTouch : 'Generate Email' ?></button>
   </div>
 </div>
+
+<?php if ($generationMode === 'lite'): ?>
+<div style="background:rgba(245,158,11,0.1);border:1px solid #f59e0b;border-radius:8px;padding:12px 16px;margin-bottom:20px;font-size:13px;color:#fcd34d">
+  &#9889; Running in <strong>Lite Mode</strong> &mdash; emails are generated without service matching.
+  <a href="/knowledge.php" style="color:#f59e0b;text-decoration:underline">Fill your Knowledge Hub</a> to unlock service-matched, higher-quality emails.
+</div>
+<?php endif; ?>
 
 <!-- Score Banner -->
 <div class="score-banner" style="display:grid;grid-template-columns:140px 1fr;gap:0;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:24px;margin-bottom:24px;align-items:center">
@@ -122,6 +140,13 @@ include 'layout.php';
         <?php endif; ?>
         <?php if (!empty($em['matched_service_id']) && $matchedService): ?>
         <span style="font-size:11px;color:var(--muted)">&#8227; <?= htmlspecialchars($matchedService['name']) ?><?php if($matchedService['vertical_name']): ?> &middot; <?= htmlspecialchars($matchedService['vertical_name']) ?><?php endif; ?></span>
+        <?php endif; ?>
+        <?php $emMode = $em['generation_mode'] ?? 'full'; ?>
+        <?php if ($emMode === 'lite'): ?>
+        <span class="badge badge-warning" style="font-size:10px;font-weight:700;letter-spacing:.05em">LITE MODE</span>
+        <a href="/knowledge.php" style="font-size:11px;color:var(--warning);text-decoration:none">&rarr; Fill Knowledge Hub</a>
+        <?php else: ?>
+        <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;background:rgba(34,197,94,0.12);color:var(--success);letter-spacing:.05em">KB-MATCHED</span>
         <?php endif; ?>
         <?php if ($emailStatus === 'sent'): ?>
         <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;background:rgba(34,197,94,0.12);color:var(--success)">&#10003; Sent</span>

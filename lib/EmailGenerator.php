@@ -5,9 +5,17 @@
  */
 class EmailGenerator {
 
+    public static function detectMode(int $tenantId): string {
+        $vCount = DB::fetchOne('SELECT COUNT(*) as c FROM kb_verticals WHERE tenant_id = ?', [$tenantId]);
+        $sCount = DB::fetchOne('SELECT COUNT(*) as c FROM kb_services WHERE tenant_id = ?', [$tenantId]);
+        return ($vCount['c'] > 0 && $sCount['c'] > 0) ? 'full' : 'lite';
+    }
+
     public static function generate($companyId, $touchNumber = 1, $senderId = 0) {
         $company = DB::fetchOne('SELECT * FROM companies WHERE id = ?', array($companyId));
         if (!$company) return array('ok' => false, 'error' => 'Company not found');
+
+        $tenantId   = $company['tenant_id'] ?? null;
 
         $aiSettings = DB::fetchOne('SELECT * FROM ai_settings LIMIT 1') ?: array();
         $provider   = $aiSettings['provider'] ?? 'gemini';
@@ -36,6 +44,44 @@ class EmailGenerator {
             'signal_count' => $company['signal_count'] ?? 0,
         );
 
+        // Detect mode: lite vs full
+        $mode = $tenantId ? self::detectMode((int)$tenantId) : 'lite';
+
+        if ($mode === 'lite') {
+            // Lite mode — no KB service matching required
+            $email = AIEmailDrafter::draftLite($company, $scoreData, $techStack, $aiSettings, $sender, $tone);
+
+            $draftData = array(
+                'company_id'         => $companyId,
+                'subject'            => $email['subject'],
+                'body'               => $email['body'],
+                'angle'              => $email['angle'],
+                'touch_number'       => $touchNumber,
+                'ai_provider'        => $email['provider'],
+                'matched_service_id' => null,
+                'prompt_context'     => substr($email['prompt_context'], 0, 65535),
+                'generation_mode'    => 'lite',
+            );
+            try {
+                DB::insert('email_drafts', $draftData);
+            } catch (Exception $e) {
+                unset($draftData['generation_mode']);
+                DB::insert('email_drafts', $draftData);
+            }
+
+            return array(
+                'ok'              => true,
+                'subject'         => $email['subject'],
+                'body'            => $email['body'],
+                'provider'        => $email['provider'],
+                'matched_service' => null,
+                'persona'         => null,
+                'touch_number'    => $touchNumber,
+                'generation_mode' => 'lite',
+            );
+        }
+
+        // Full mode — existing KBMatcher + AIEmailDrafter flow
         $service = KBMatcher::matchService($signalTypes, $techStack, $company['industry']);
 
         $persona = null;
@@ -106,12 +152,14 @@ class EmailGenerator {
             'matched_service_id' => $service ? $service['id'] : null,
             'prompt_context'     => substr($email['prompt'], 0, 65535),
             'thread_id'          => $threadId,
+            'generation_mode'    => 'full',
         );
         try {
             DB::insert('email_drafts', $draftData);
         } catch (Exception $e) {
-            // Fallback: insert without thread_id in case migration hasn't run yet
+            // Fallback: insert without new columns in case migrations haven't run yet
             unset($draftData['thread_id']);
+            unset($draftData['generation_mode']);
             DB::insert('email_drafts', $draftData);
         }
 
@@ -123,6 +171,7 @@ class EmailGenerator {
             'matched_service' => $service ? $service['name'] : null,
             'persona'         => $persona ? $persona['name']  : null,
             'touch_number'    => $touchNumber,
+            'generation_mode' => 'full',
         );
     }
 }

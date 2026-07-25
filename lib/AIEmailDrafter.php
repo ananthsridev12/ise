@@ -49,6 +49,92 @@ class AIEmailDrafter {
         );
     }
 
+    public static function draftLite($company, $scoreData, $techStack, $aiSettings, $sender, $tone) {
+        $provider = $aiSettings['provider'] ?? 'gemini';
+        $keyField  = $provider . '_key';
+
+        // KB company info (optional)
+        $kbCompany   = DB::fetchOne('SELECT * FROM kb_company LIMIT 1') ?: array();
+        $ourCompany  = $kbCompany['name'] ?? 'Our Company';
+        $credibility = $kbCompany['credibility_statement'] ?? 'We help companies improve their operations.';
+
+        // Sender fallback
+        if (!$sender) {
+            $sender = array('full_name' => 'Our Team', 'title' => '', 'calendar_link' => '');
+        }
+        $senderName     = $sender['full_name'] ?? 'Our Team';
+        $senderTitle    = $sender['title'] ?? '';
+        $senderCalendar = $sender['calendar_link'] ?? '';
+
+        // Tone fallback
+        $toneDescriptors = $tone ? ($tone['tone_descriptors'] ?? 'Professional, concise') : 'Professional, concise, direct.';
+        $emailLength     = $aiSettings['email_length'] ?? 'medium';
+
+        // Signals and tech
+        $signalList = !empty($scoreData['signal_types']) ? implode(', ', $scoreData['signal_types']) : 'None detected';
+        $techTools  = $techStack ? implode(', ', array_column($techStack, 'tool')) : 'Not detected';
+
+        $prompt  = "You are writing a cold outreach email on behalf of {$senderName}" . ($senderTitle ? ", {$senderTitle}" : '') . " at {$ourCompany}.\n\n";
+        $prompt .= "=== ABOUT US ===\n{$credibility}\n\n";
+        $prompt .= "=== TARGET COMPANY ===\n";
+        $prompt .= "Company: {$company['name']}, " . ($company['industry'] ?? 'Unknown industry') . ", " . ($company['country'] ?? 'Unknown') . "\n";
+        $prompt .= "Detected signals: {$signalList}\n";
+        $prompt .= "Detected tech stack: {$techTools}\n";
+        $prompt .= "Intent score: " . ($scoreData['score'] ?? 0) . "/100\n\n";
+        $prompt .= "=== TONE ===\n{$toneDescriptors}\nEmail length: {$emailLength}\n\n";
+        $prompt .= "=== SENDER ===\n";
+        $prompt .= "From: {$senderName}" . ($senderTitle ? ", {$senderTitle}" : '') . "\n";
+        if ($senderCalendar) $prompt .= "Calendar link for CTA: {$senderCalendar}\n";
+        $prompt .= "\n";
+        $prompt .= "Write a {$emailLength} cold outreach email with subject line and body.\n";
+        $prompt .= "Focus on the prospect's situation and signals. Do not fabricate specific service names or case studies.\n";
+        $prompt .= "No placeholders except [First Name].\n\n";
+        $prompt .= "=== OUTPUT FORMAT ===\n";
+        $prompt .= "Always output exactly:\nSUBJECT: <subject line>\nBODY:\n<email body>\n";
+
+        $custom = $aiSettings['custom_instructions'] ?? '';
+        if ($custom) $prompt .= "\nAdditional instructions: {$custom}\n";
+
+        $raw = '';
+        if ($provider === 'claude' && !empty($aiSettings['claude_key'])) {
+            $raw = self::callClaude(
+                array(array('role' => 'user', 'content' => $prompt)),
+                '',
+                $aiSettings['claude_key'],
+                $aiSettings['model'] ?? ''
+            );
+        } elseif ($provider === 'gemini' && !empty($aiSettings['gemini_key'])) {
+            $raw = self::callGemini($prompt, $aiSettings['gemini_key'], $aiSettings['model'] ?? '');
+        } elseif ($provider === 'openai' && !empty($aiSettings['openai_key'])) {
+            $raw = self::callOpenAI(
+                array(array('role' => 'user', 'content' => $prompt)),
+                '',
+                $aiSettings['openai_key'],
+                $aiSettings['model'] ?? ''
+            );
+        }
+
+        if (!$raw) {
+            return array(
+                'subject'        => '',
+                'body'           => '',
+                'angle'          => 'ai_failed',
+                'provider'       => $provider,
+                'prompt_context' => $prompt,
+            );
+        }
+
+        $parsed = self::parseResponse($raw);
+
+        return array(
+            'subject'        => $parsed['subject'],
+            'body'           => $parsed['body'],
+            'angle'          => 'ai_' . $provider,
+            'provider'       => $provider,
+            'prompt_context' => $prompt,
+        );
+    }
+
     public static function testConnection($aiSettings): array {
         $provider = $aiSettings['provider'] ?? 'gemini';
         $keyField = $provider . '_key';

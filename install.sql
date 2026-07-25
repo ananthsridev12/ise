@@ -290,3 +290,5 @@ CREATE TABLE IF NOT EXISTS `user_kb_services` (
   FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
   FOREIGN KEY (`service_id`) REFERENCES `kb_services`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
+
+ALTER TABLE `email_drafts` ADD COLUMN `generation_mode` VARCHAR(10) DEFAULT 'full';
