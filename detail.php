@@ -2,6 +2,7 @@
 require_once 'config.php';
 require_once 'lib/DB.php';
 require_once 'lib/EmailGenerator.php';
+require_once 'lib/KBMatcher.php';
 
 $id = (int)($_GET['id'] ?? 0);
 if (!$id) { header('Location: companies.php'); exit; }
@@ -56,6 +57,19 @@ try {
         $generationMode = EmailGenerator::detectMode((int)$tenantId);
     }
 } catch (Exception $e) { /* graceful skip */ }
+
+// Load top signals and ICPs for pickers
+$topSignals = KBMatcher::topSignals($id, 5);
+$topICPs    = $matchedService ? KBMatcher::matchICPs($matchedService, $company, 5) : array();
+
+// Load AI settings for default num_touches
+$aiSettingsForPage = array();
+try {
+    $aiSettingsForPage = DB::fetchOne('SELECT * FROM ai_settings LIMIT 1') ?: array();
+} catch (Exception $e) {}
+$defaultNumTouches = (int)($aiSettingsForPage['num_touches'] ?? 3);
+if ($defaultNumTouches < 1) $defaultNumTouches = 3;
+if ($defaultNumTouches > 5) $defaultNumTouches = 5;
 
 include 'layout.php';
 ?>
@@ -126,6 +140,87 @@ include 'layout.php';
 <div id="enrichStatus" style="display:none;margin-bottom:16px;padding:12px 18px;border-radius:8px;font-size:13px"></div>
 <div id="genStatusTop" style="display:none;margin-bottom:16px;padding:12px 18px;border-radius:8px;font-size:13px"></div>
 
+<!-- Signal Picker -->
+<?php if ($topSignals): ?>
+<div class="card" style="margin-bottom:16px">
+  <div style="padding:14px 20px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600">&#128268; Select Signals to Reference</div>
+  <div style="padding:14px 20px;display:flex;flex-wrap:wrap;gap:12px">
+  <?php foreach ($topSignals as $i => $sig): ?>
+    <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 12px;max-width:360px">
+      <input type="checkbox" name="signal_ids[]" value="<?= $sig['id'] ?>" <?= $i === 0 ? 'checked' : '' ?> style="margin-top:2px">
+      <span>
+        <span style="font-size:10px;padding:2px 7px;border-radius:4px;background:rgba(99,102,241,0.15);color:#818cf8;margin-right:6px"><?= htmlspecialchars($sig['source'] ?? '') ?></span>
+        <?= htmlspecialchars($sig['title'] ?? '') ?>
+        <span style="display:block;font-size:11px;color:var(--muted);margin-top:2px"><?= htmlspecialchars(substr($sig['created_at'] ?? '', 0, 10)) ?></span>
+      </span>
+    </label>
+  <?php endforeach; ?>
+  </div>
+</div>
+<?php endif; ?>
+
+<!-- ICP / Persona Picker -->
+<?php if ($topICPs): ?>
+<div class="card" style="margin-bottom:16px">
+  <div style="padding:14px 20px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600">&#128100; Select Buyer Persona</div>
+  <div style="padding:14px 20px;display:flex;flex-wrap:wrap;gap:10px">
+  <?php foreach ($topICPs as $i => $icp): ?>
+    <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 12px;max-width:320px">
+      <input type="radio" name="selected_icp_id" value="<?= $icp['id'] ?>" <?= $i === 0 ? 'checked' : '' ?> style="margin-top:2px">
+      <span>
+        <strong><?= htmlspecialchars($icp['name']) ?></strong>
+        <span style="font-size:10px;padding:2px 7px;border-radius:4px;background:rgba(34,197,94,0.12);color:var(--success);margin-left:6px">score <?= (int)($icp['_score'] ?? 0) ?></span>
+        <?php if ($icp['industries']): ?>
+        <span style="display:block;font-size:11px;color:var(--muted);margin-top:2px"><?= htmlspecialchars($icp['industries']) ?><?php if ($icp['size_range']): ?> &middot; <?= htmlspecialchars($icp['size_range']) ?><?php endif; ?></span>
+        <?php endif; ?>
+      </span>
+    </label>
+  <?php endforeach; ?>
+  </div>
+</div>
+<?php endif; ?>
+
+<!-- Batch Email Sequence Generator -->
+<div class="card" style="margin-bottom:16px;padding:16px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+  <button onclick="openSequenceModal()" class="btn btn-primary">&#10024; Generate Email Sequence</button>
+  <span style="font-size:13px;color:var(--muted)">Generate multiple touches in sequence automatically</span>
+</div>
+
+<!-- Sequence Modal -->
+<div id="seqModal" style="display:none;position:fixed;inset:0;z-index:1000;display:none">
+  <div class="modal-backdrop" onclick="closeSequenceModal()" style="position:absolute;inset:0;background:rgba(0,0,0,0.6)"></div>
+  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--card);border:1px solid var(--border);border-radius:12px;padding:28px;min-width:320px;z-index:1">
+    <div style="font-size:15px;font-weight:600;margin-bottom:16px">Generate Email Sequence</div>
+    <div class="form-group">
+      <label>Number of touches (1–5)</label>
+      <input type="number" id="seqTouches" min="1" max="5" value="<?= $defaultNumTouches ?>" style="width:80px">
+    </div>
+    <div id="seqProgress" style="margin:12px 0;font-size:13px;color:var(--muted)"></div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button onclick="runSequence()" class="btn btn-primary" id="seqBtn">Generate</button>
+      <button onclick="closeSequenceModal()" class="btn btn-secondary">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Refine Modal -->
+<div id="refineModal" style="display:none;position:fixed;inset:0;z-index:1000">
+  <div class="modal-backdrop" onclick="closeRefineModal()" style="position:absolute;inset:0;background:rgba(0,0,0,0.6)"></div>
+  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--card);border:1px solid var(--border);border-radius:12px;padding:28px;min-width:380px;max-width:540px;width:90%;z-index:1">
+    <div style="font-size:15px;font-weight:600;margin-bottom:16px">Refine Email</div>
+    <input type="hidden" id="refineDraftId" value="">
+    <div class="form-group">
+      <label>Refinement instructions</label>
+      <textarea id="refineInstructions" rows="4" placeholder="Make it shorter, focus on the SAP migration angle, change CTA to a free audit offer..."></textarea>
+    </div>
+    <div id="refineStatus" style="font-size:13px;margin:8px 0"></div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button onclick="submitRefine()" class="btn btn-primary" id="refineBtn">Refine</button>
+      <button onclick="closeRefineModal()" class="btn btn-secondary">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- Email Drafts -->
 <?php if ($emails): ?>
 <div style="margin-bottom:24px">
@@ -158,6 +253,8 @@ include 'layout.php';
         <span style="font-size:11px;color:var(--muted)"><?= date('d M Y', strtotime($em['created_at'])) ?></span>
         <button onclick="copyEmail(<?= $em['id'] ?>)" class="btn btn-secondary btn-sm">&#128203; Copy</button>
         <a href="mailto:?subject=<?= urlencode($em['subject']) ?>&body=<?= urlencode($em['body']) ?>" class="btn btn-ghost btn-sm">&#128232; Mail</a>
+        <button onclick="openRefineModal(<?= $em['id'] ?>)" class="btn btn-ghost btn-sm" style="color:#818cf8">&#9998; Refine</button>
+        <button onclick="deleteEmail(<?= $em['id'] ?>)" class="btn btn-ghost btn-sm" style="color:var(--danger)">&#128465; Delete</button>
         <?php if ($emailStatus === 'draft'): ?>
         <button onclick="markEmail(<?= $em['id'] ?>, 'sent')" class="btn btn-ghost btn-sm" style="color:var(--success)">&#10003; Sent</button>
         <?php elseif ($emailStatus === 'sent'): ?>
@@ -168,7 +265,7 @@ include 'layout.php';
     <div class="email-body-grid" style="padding:16px 20px;display:grid;grid-template-columns:1fr 1fr;gap:20px">
       <div>
         <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:600;margin-bottom:8px">Subject</div>
-        <div style="font-size:14px;font-weight:600;line-height:1.4;color:var(--text)"><?= htmlspecialchars($em['subject']) ?></div>
+        <div style="font-size:14px;font-weight:600;line-height:1.4;color:var(--text)" class="email-subject-text"><?= htmlspecialchars($em['subject']) ?></div>
       </div>
       <div>
         <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:600;margin-bottom:8px">Body</div>
@@ -425,6 +522,106 @@ function copyEmail(id) {
   var el = document.getElementById('emailBody' + id);
   el.select();
   document.execCommand('copy');
+}
+
+// --- Refine ---
+function openRefineModal(draftId) {
+  document.getElementById('refineDraftId').value = draftId;
+  document.getElementById('refineInstructions').value = '';
+  document.getElementById('refineStatus').textContent = '';
+  document.getElementById('refineModal').style.display = 'block';
+}
+function closeRefineModal() {
+  document.getElementById('refineModal').style.display = 'none';
+}
+async function submitRefine() {
+  var draftId = document.getElementById('refineDraftId').value;
+  var instructions = document.getElementById('refineInstructions').value.trim();
+  if (!instructions) { alert('Please enter refinement instructions.'); return; }
+  var btn = document.getElementById('refineBtn');
+  btn.disabled = true; btn.textContent = 'Refining...';
+  document.getElementById('refineStatus').innerHTML = '<span style="color:var(--muted)">Calling AI provider...</span>';
+  try {
+    var fd = new FormData();
+    fd.append('action', 'refine');
+    fd.append('draft_id', draftId);
+    fd.append('instructions', instructions);
+    var r = await fetch('api/email.php', {method:'POST', body:fd});
+    var d = await r.json();
+    if (d.ok) {
+      // Update subject and body in-page
+      var card = document.getElementById('emailCard' + draftId);
+      if (card) {
+        var subjectEl = card.querySelector('.email-subject-text');
+        if (subjectEl) subjectEl.textContent = d.subject;
+        var bodyEl = document.getElementById('emailBody' + draftId);
+        if (bodyEl) bodyEl.value = d.body;
+      }
+      closeRefineModal();
+    } else {
+      document.getElementById('refineStatus').innerHTML = '<span style="color:var(--danger)">Error: ' + (d.error || 'Refine failed') + '</span>';
+      btn.disabled = false; btn.textContent = 'Refine';
+    }
+  } catch(e) {
+    document.getElementById('refineStatus').innerHTML = '<span style="color:var(--danger)">Network error: ' + e.message + '</span>';
+    btn.disabled = false; btn.textContent = 'Refine';
+  }
+}
+
+// --- Delete ---
+async function deleteEmail(draftId) {
+  if (!confirm('Delete this email draft? This cannot be undone.')) return;
+  try {
+    var fd = new FormData();
+    fd.append('action', 'delete');
+    fd.append('draft_id', draftId);
+    var r = await fetch('api/email.php', {method:'POST', body:fd});
+    var d = await r.json();
+    if (d.ok) {
+      var card = document.getElementById('emailCard' + draftId);
+      if (card) card.remove();
+    } else {
+      alert('Delete failed: ' + (d.error || 'unknown error'));
+    }
+  } catch(e) { alert('Network error: ' + e.message); }
+}
+
+// --- Sequence Generator ---
+function openSequenceModal() {
+  document.getElementById('seqModal').style.display = 'block';
+  document.getElementById('seqProgress').textContent = '';
+  var btn = document.getElementById('seqBtn');
+  btn.disabled = false; btn.textContent = 'Generate';
+}
+function closeSequenceModal() {
+  document.getElementById('seqModal').style.display = 'none';
+}
+async function runSequence() {
+  var n = parseInt(document.getElementById('seqTouches').value) || 3;
+  if (n < 1) n = 1;
+  if (n > 5) n = 5;
+  var btn = document.getElementById('seqBtn');
+  btn.disabled = true;
+  var startTouch = <?= $nextTouch ?>;
+  for (var i = 0; i < n; i++) {
+    var touch = startTouch + i;
+    document.getElementById('seqProgress').innerHTML = '<span style="color:var(--muted)">Generating touch ' + (i+1) + ' of ' + n + '...</span>';
+    try {
+      var r = await fetch('api/generate_email.php?company_id=' + companyId + '&touch_number=' + touch);
+      var d = await r.json();
+      if (!d.ok) {
+        document.getElementById('seqProgress').innerHTML = '<span style="color:var(--danger)">Error on touch ' + touch + ': ' + (d.error || 'failed') + '</span>';
+        btn.disabled = false;
+        return;
+      }
+    } catch(e) {
+      document.getElementById('seqProgress').innerHTML = '<span style="color:var(--danger)">Network error: ' + e.message + '</span>';
+      btn.disabled = false;
+      return;
+    }
+  }
+  document.getElementById('seqProgress').innerHTML = '<span style="color:var(--success)">&#10003; All ' + n + ' touches generated. Reloading...</span>';
+  setTimeout(function(){ location.reload(); }, 1500);
 }
 </script>
 

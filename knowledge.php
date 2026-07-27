@@ -2,7 +2,7 @@
 require_once 'config.php';
 require_once 'lib/DB.php';
 
-$tabs = array('company','verticals','services','icps','personas','tone','senders','proof','documents');
+$tabs = array('company','verticals','services','icps','personas','tone','senders','proof','documents','assets');
 $tabLabels = array(
   'company'   => 'Company',
   'verticals' => 'Verticals',
@@ -13,6 +13,7 @@ $tabLabels = array(
   'senders'   => 'Senders',
   'proof'     => 'Proof Points',
   'documents' => 'Documents',
+  'assets'    => 'Assets & Offers',
 );
 $tab = $_GET['tab'] ?? 'company';
 if (!in_array($tab, $tabs)) $tab = 'company';
@@ -518,6 +519,135 @@ $services  = DB::fetchAll('SELECT id, name FROM kb_services ORDER BY name');
 </div>
 </div>
 
+<?php elseif ($tab === 'assets'): ?>
+<?php
+$assets   = DB::fetchAll(
+    'SELECT a.*, s.name as service_name, v.name as vertical_name FROM kb_assets a LEFT JOIN kb_services s ON a.service_id=s.id LEFT JOIN kb_verticals v ON a.vertical_id=v.id WHERE a.tenant_id=? ORDER BY a.category, a.name',
+    array(Auth::tenantId())
+);
+$assetServices = DB::fetchAll(
+    'SELECT s.id, s.name, v.name as vname FROM kb_services s LEFT JOIN kb_verticals v ON s.vertical_id=v.id WHERE s.tenant_id=? ORDER BY vname, s.name',
+    array(Auth::tenantId())
+);
+$assetVerticals = DB::fetchAll('SELECT id, name FROM kb_verticals WHERE tenant_id=? ORDER BY name', array(Auth::tenantId()));
+?>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+<div class="card">
+  <div style="padding:16px 20px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600">Add / Edit Asset or Offer</div>
+  <div style="padding:20px">
+    <form id="assetForm">
+    <input type="hidden" name="id" id="asset_id" value="">
+    <div class="form-group"><label>Name *</label><input type="text" name="name" id="asset_name" required placeholder="e.g. ERP Readiness Checklist"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div class="form-group"><label>Category</label>
+        <select name="category" id="asset_category">
+          <option value="content">Content Asset</option>
+          <option value="tool">Tool / Assessment</option>
+          <option value="entry_door">Entry Door / Offer</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Asset Type</label>
+        <select name="asset_type" id="asset_asset_type">
+          <option value="pdf">PDF</option>
+          <option value="guide">Guide</option>
+          <option value="whitepaper">Whitepaper</option>
+          <option value="assessment">Assessment</option>
+          <option value="calculator">Calculator</option>
+          <option value="diagnostic">Diagnostic</option>
+          <option value="checklist">Checklist</option>
+          <option value="template">Template</option>
+          <option value="webinar">Webinar</option>
+          <option value="free_audit">Free Audit</option>
+          <option value="poc">POC</option>
+          <option value="pilot">Pilot</option>
+          <option value="consultation">Consultation</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label>Service</label>
+      <select name="service_id" id="asset_service_id">
+        <option value="">-- none --</option>
+        <?php
+        $lastVname = null;
+        foreach ($assetServices as $s):
+          if ($s['vname'] !== $lastVname):
+            if ($lastVname !== null) echo '</optgroup>';
+            echo '<optgroup label="' . htmlspecialchars($s['vname'] ?? 'No Vertical') . '">';
+            $lastVname = $s['vname'];
+          endif;
+        ?>
+        <option value="<?= $s['id'] ?>"><?= htmlspecialchars($s['name']) ?></option>
+        <?php endforeach; ?>
+        <?php if ($lastVname !== null): ?></optgroup><?php endif; ?>
+      </select>
+    </div>
+    <div class="form-group"><label>Vertical <span style="color:var(--muted);font-size:11px">(optional, for assets not tied to a specific service)</span></label>
+      <select name="vertical_id" id="asset_vertical_id">
+        <option value="">-- none --</option>
+        <?php foreach ($assetVerticals as $v): ?>
+        <option value="<?= $v['id'] ?>"><?= htmlspecialchars($v['name']) ?></option>
+        <?php endforeach; ?>
+      </select>
+    </div>
+    <div class="form-group"><label>Description</label><textarea name="description" id="asset_description" rows="2"></textarea></div>
+    <div class="form-group"><label>URL <span style="color:var(--muted);font-size:11px">(download / landing page link)</span></label><input type="url" name="url" id="asset_url" placeholder="https://..."></div>
+    <div class="form-group"><label>CTA Text <span style="color:var(--muted);font-size:11px">e.g. "Download the free checklist"</span></label><input type="text" name="cta_text" id="asset_cta_text" placeholder="Download the free checklist"></div>
+    <div class="form-group"><label>Use in Touch # <span style="color:var(--muted);font-size:11px">comma-sep, e.g. 2,3</span></label><input type="text" name="use_in_touch" id="asset_use_in_touch" value="2" placeholder="2"></div>
+    <div class="form-group"><label>Target Stage</label>
+      <select name="target_stage" id="asset_target_stage">
+        <option value="awareness">Awareness</option>
+        <option value="consideration" selected>Consideration</option>
+        <option value="decision">Decision</option>
+      </select>
+    </div>
+    <div class="form-group" style="display:flex;align-items:center;gap:10px">
+      <input type="checkbox" name="is_active" id="asset_is_active" value="1" checked>
+      <label for="asset_is_active" style="margin:0;cursor:pointer">Active</label>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button type="button" onclick="kbSave('save_asset','assetForm',this)" class="btn btn-primary">Save Asset</button>
+      <button type="button" onclick="clearAssetForm()" class="btn btn-secondary">Clear</button>
+    </div>
+    </form>
+  </div>
+</div>
+<div class="card">
+  <div style="padding:16px 20px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600">Assets &amp; Offers (<?= count($assets) ?>)</div>
+  <?php if ($assets): ?>
+  <?php foreach ($assets as $a): ?>
+  <?php
+    $catBadge = $a['category'] === 'content' ? 'background:rgba(99,102,241,0.15);color:#818cf8' : ($a['category'] === 'tool' ? 'background:rgba(34,197,94,0.12);color:var(--success)' : 'background:rgba(245,158,11,0.15);color:#f59e0b');
+  ?>
+  <div style="padding:12px 20px;border-bottom:1px solid rgba(42,45,58,0.4)">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div>
+        <div style="font-weight:600;font-size:13px"><?= htmlspecialchars($a['name']) ?> <span style="font-size:10px;padding:2px 7px;border-radius:4px;<?= $catBadge ?>"><?= htmlspecialchars($a['category']) ?></span></div>
+        <div style="font-size:11px;color:var(--muted)">
+          <?= htmlspecialchars($a['service_name'] ?? ($a['vertical_name'] ?? '')) ?>
+          &middot; Touch <?= htmlspecialchars($a['use_in_touch']) ?>
+          <?php if (!$a['is_active']): ?> <span style="color:var(--danger)">(inactive)</span><?php endif; ?>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;white-space:nowrap">
+        <button onclick="editAsset(<?= htmlspecialchars(json_encode($a)) ?>)" class="btn btn-secondary btn-sm">Edit</button>
+        <button onclick="kbDelete('delete_asset',<?= $a['id'] ?>)" class="btn btn-ghost btn-sm" style="color:var(--danger)">Del</button>
+      </div>
+    </div>
+  </div>
+  <?php endforeach; ?>
+  <?php else: ?>
+  <div style="padding:20px;color:var(--muted);font-size:13px">No assets yet. Add content assets, tools, or entry-door offers above.</div>
+  <?php endif; ?>
+  <div style="padding:10px 20px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <span style="font-size:12px;color:var(--muted)">Bulk import:</span>
+    <input type="file" id="imp_assets" accept=".csv" style="font-size:12px;color:var(--muted)">
+    <button onclick="importCSV('assets','imp_assets',this)" class="btn btn-secondary btn-sm">Import CSV</button>
+    <a href="api/kb_template.php?entity=assets" class="btn btn-ghost btn-sm">&#8595; Template</a>
+  </div>
+</div>
+</div>
+
 <?php elseif ($tab === 'documents'): ?>
 <?php
 $docs      = DB::fetchAll('SELECT d.*, v.name as v_name, s.name as s_name FROM kb_documents d LEFT JOIN kb_verticals v ON d.vertical_id=v.id LEFT JOIN kb_services s ON d.service_id=s.id ORDER BY d.doc_type, d.title');
@@ -807,6 +937,32 @@ function clearDocForm() {
   document.getElementById('doc_vertical_id').value='';
   document.getElementById('doc_service_id').value='';
   document.getElementById('doc_is_public').checked=true;
+}
+
+function editAsset(a) {
+  document.getElementById('asset_id').value = a.id||'';
+  document.getElementById('asset_name').value = a.name||'';
+  document.getElementById('asset_category').value = a.category||'content';
+  document.getElementById('asset_asset_type').value = a.asset_type||'pdf';
+  document.getElementById('asset_service_id').value = a.service_id||'';
+  document.getElementById('asset_vertical_id').value = a.vertical_id||'';
+  document.getElementById('asset_description').value = a.description||'';
+  document.getElementById('asset_url').value = a.url||'';
+  document.getElementById('asset_cta_text').value = a.cta_text||'';
+  document.getElementById('asset_use_in_touch').value = a.use_in_touch||'2';
+  document.getElementById('asset_target_stage').value = a.target_stage||'consideration';
+  document.getElementById('asset_is_active').checked = a.is_active!=0;
+  window.scrollTo(0,0);
+}
+function clearAssetForm() {
+  ['asset_id','asset_name','asset_description','asset_url','asset_cta_text'].forEach(function(id){ document.getElementById(id).value=''; });
+  document.getElementById('asset_category').value='content';
+  document.getElementById('asset_asset_type').value='pdf';
+  document.getElementById('asset_service_id').value='';
+  document.getElementById('asset_vertical_id').value='';
+  document.getElementById('asset_use_in_touch').value='2';
+  document.getElementById('asset_target_stage').value='consideration';
+  document.getElementById('asset_is_active').checked=true;
 }
 </script>
 

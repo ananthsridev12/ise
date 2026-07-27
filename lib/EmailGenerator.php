@@ -113,9 +113,15 @@ class EmailGenerator {
             $priorSubject = $prior ? $prior['subject'] : '';
         }
 
+        // Match assets for this touch
+        $assets = array();
+        if ($service) {
+            $assets = KBMatcher::matchAssets((int)$service['id'], (int)$tenantId, $touchNumber);
+        }
+
         $email = AIEmailDrafter::draft(
             $company, $scoreData, $techStack, $service, $sender, $tone,
-            $aiSettings, $touchNumber, $priorSubject, $persona, $thread
+            $aiSettings, $touchNumber, $priorSubject, $persona, $thread, $assets
         );
 
         // Save or update conversation thread

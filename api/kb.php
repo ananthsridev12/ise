@@ -254,6 +254,66 @@ try {
             echo json_encode(array('ok' => true));
             break;
 
+        case 'save_asset':
+            $id       = (int)($_POST['id'] ?? 0);
+            $tenantId = Auth::tenantId();
+            $validCategories  = array('content','tool','entry_door');
+            $validAssetTypes  = array('pdf','guide','whitepaper','assessment','calculator','diagnostic','checklist','template','webinar','free_audit','poc','pilot','consultation','other');
+            $validStages      = array('awareness','consideration','decision');
+            $fields = array(
+                'tenant_id'    => $tenantId,
+                'service_id'   => (int)($_POST['service_id'] ?? 0) ?: null,
+                'vertical_id'  => (int)($_POST['vertical_id'] ?? 0) ?: null,
+                'category'     => in_array($_POST['category']??'', $validCategories) ? $_POST['category'] : 'content',
+                'asset_type'   => in_array($_POST['asset_type']??'', $validAssetTypes) ? $_POST['asset_type'] : 'pdf',
+                'name'         => trim($_POST['name'] ?? ''),
+                'description'  => trim($_POST['description'] ?? ''),
+                'url'          => trim($_POST['url'] ?? ''),
+                'cta_text'     => trim($_POST['cta_text'] ?? ''),
+                'use_in_touch' => trim($_POST['use_in_touch'] ?? '2') ?: '2',
+                'target_stage' => in_array($_POST['target_stage']??'', $validStages) ? $_POST['target_stage'] : 'consideration',
+                'is_active'    => ($_POST['is_active'] ?? '0') === '1' ? 1 : 0,
+            );
+            if (!$fields['name']) { echo json_encode(array('ok'=>false,'error'=>'Name is required')); break; }
+            if ($id) {
+                DB::update('kb_assets', $fields, 'id = ? AND tenant_id = ?', array($id, $tenantId));
+            } else {
+                DB::insert('kb_assets', $fields);
+            }
+            echo json_encode(array('ok' => true));
+            break;
+
+        case 'delete_asset':
+            $id       = (int)($_POST['id'] ?? 0);
+            $tenantId = Auth::tenantId();
+            if ($id) DB::query('DELETE FROM kb_assets WHERE id = ? AND tenant_id = ?', array($id, $tenantId));
+            echo json_encode(array('ok' => true));
+            break;
+
+        case 'import_assets':
+            $tenantId = Auth::tenantId();
+            $rows = $_POST['rows'] ?? array();
+            $inserted = 0;
+            foreach ($rows as $row) {
+                $name = trim($row['name'] ?? '');
+                if (!$name) continue;
+                DB::insert('kb_assets', array(
+                    'tenant_id'    => $tenantId,
+                    'name'         => $name,
+                    'category'     => $row['category'] ?? 'content',
+                    'asset_type'   => $row['asset_type'] ?? 'pdf',
+                    'description'  => $row['description'] ?? '',
+                    'url'          => $row['url'] ?? '',
+                    'cta_text'     => $row['cta_text'] ?? '',
+                    'use_in_touch' => $row['use_in_touch'] ?? '2',
+                    'target_stage' => $row['target_stage'] ?? 'consideration',
+                    'is_active'    => 1,
+                ));
+                $inserted++;
+            }
+            echo json_encode(array('ok' => true, 'message' => "Imported {$inserted} assets."));
+            break;
+
         default:
             echo json_encode(array('error' => 'Unknown action: ' . htmlspecialchars($action)));
     }
