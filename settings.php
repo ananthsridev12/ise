@@ -5,6 +5,25 @@ require_once 'lib/DB.php';
 $msg = '';
 $ai  = DB::fetchOne('SELECT * FROM ai_settings LIMIT 1') ?: array();
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'sequence') {
+    // Save sequence strategy settings
+    $seqFields = array(
+        'default_stage' => $_POST['default_stage'] ?? 'auto',
+        'tof_score_max' => (int)($_POST['tof_score_max'] ?? 40),
+        'bof_score_min' => (int)($_POST['bof_score_min'] ?? 71),
+        'tof_sequence'  => json_encode(array_values(array_filter(array_map('trim', explode("\n", str_replace("\r", '', $_POST['tof_sequence'] ?? '')))))),
+        'mof_sequence'  => json_encode(array_values(array_filter(array_map('trim', explode("\n", str_replace("\r", '', $_POST['mof_sequence'] ?? '')))))),
+        'bof_sequence'  => json_encode(array_values(array_filter(array_map('trim', explode("\n", str_replace("\r", '', $_POST['bof_sequence'] ?? '')))))),
+    );
+    if ($ai) {
+        DB::update('ai_settings', $seqFields, 'id = ?', array($ai['id']));
+    } else {
+        DB::insert('ai_settings', $seqFields);
+    }
+    $ai  = DB::fetchOne('SELECT * FROM ai_settings LIMIT 1') ?: array();
+    $msg = 'Sequence strategy saved.';
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save') {
     $fields = array(
         'provider'            => $_POST['provider'] ?? 'gemini',
@@ -113,6 +132,61 @@ include 'layout.php';
   </div>
 
   <button type="submit" class="btn btn-primary" style="margin-bottom:20px">Save Settings</button>
+</form>
+
+<?php
+// Decode stored sequences back to newline-separated for display
+function seqJsonToLines($json) {
+    if (!$json) return '';
+    $arr = json_decode($json, true);
+    return is_array($arr) ? implode("\n", $arr) : $json;
+}
+?>
+
+<form method="POST" style="max-width:720px">
+  <input type="hidden" name="action" value="sequence">
+
+  <div class="card" style="margin-bottom:20px">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600">Sequence Strategy</div>
+    <div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+      <div class="form-group">
+        <label>Default Funnel Stage</label>
+        <select name="default_stage">
+          <option value="auto" <?= ($ai['default_stage'] ?? 'auto') === 'auto' ? 'selected' : '' ?>>Auto-detect by score</option>
+          <option value="tof"  <?= ($ai['default_stage'] ?? 'auto') === 'tof'  ? 'selected' : '' ?>>TOF &ndash; Awareness</option>
+          <option value="mof"  <?= ($ai['default_stage'] ?? 'auto') === 'mof'  ? 'selected' : '' ?>>MOF &ndash; Consideration</option>
+          <option value="bof"  <?= ($ai['default_stage'] ?? 'auto') === 'bof'  ? 'selected' : '' ?>>BOF &ndash; Decision</option>
+        </select>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">When set to Auto-detect, stage is determined by the company intent score.</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="form-group">
+          <label>TOF Score Threshold (max)</label>
+          <input type="number" name="tof_score_max" value="<?= (int)($ai['tof_score_max'] ?? 40) ?>" min="0" max="100">
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">Scores at or below this = TOF</div>
+        </div>
+        <div class="form-group">
+          <label>BOF Score Threshold (min)</label>
+          <input type="number" name="bof_score_min" value="<?= (int)($ai['bof_score_min'] ?? 71) ?>" min="0" max="100">
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">Scores at or above this = BOF</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>TOF Touch Intents <span style="color:var(--muted);font-weight:400">(one per line)</span></label>
+        <textarea name="tof_sequence" rows="5" placeholder="awareness&#10;value_insight&#10;lead_magnet&#10;soft_cta&#10;breakup"><?= htmlspecialchars(seqJsonToLines($ai['tof_sequence'] ?? '')) ?></textarea>
+      </div>
+      <div class="form-group">
+        <label>MOF Touch Intents <span style="color:var(--muted);font-weight:400">(one per line)</span></label>
+        <textarea name="mof_sequence" rows="5" placeholder="problem_agitate&#10;tool_offer&#10;entry_door&#10;case_study&#10;direct_ask"><?= htmlspecialchars(seqJsonToLines($ai['mof_sequence'] ?? '')) ?></textarea>
+      </div>
+      <div class="form-group">
+        <label>BOF Touch Intents <span style="color:var(--muted);font-weight:400">(one per line)</span></label>
+        <textarea name="bof_sequence" rows="5" placeholder="direct_pitch&#10;entry_door&#10;roi_case&#10;urgency&#10;breakup"><?= htmlspecialchars(seqJsonToLines($ai['bof_sequence'] ?? '')) ?></textarea>
+      </div>
+    </div>
+  </div>
+
+  <button type="submit" class="btn btn-primary" style="margin-bottom:20px">Save Sequence Strategy</button>
 </form>
 
 <div class="card" style="max-width:720px;margin-bottom:20px">

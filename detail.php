@@ -60,7 +60,7 @@ try {
 
 // Load top signals and ICPs for pickers
 $topSignals = KBMatcher::topSignals($id, 5);
-$topICPs    = $matchedService ? KBMatcher::matchICPs($matchedService, $company, 5) : array();
+$topICPs    = $matchedService ? KBMatcher::matchICPs($matchedService, $company, 5, (int)($tenantId ?? 0)) : array();
 
 // Load AI settings for default num_touches
 $aiSettingsForPage = array();
@@ -181,9 +181,38 @@ include 'layout.php';
 <?php endif; ?>
 
 <!-- Batch Email Sequence Generator -->
-<div class="card" style="margin-bottom:16px;padding:16px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-  <button onclick="openSequenceModal()" class="btn btn-primary">&#10024; Generate Email Sequence</button>
-  <span style="font-size:13px;color:var(--muted)">Generate multiple touches in sequence automatically</span>
+<div class="card" style="margin-bottom:16px;padding:16px 20px">
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+    <label style="font-size:13px;font-weight:500">Generation Mode:</label>
+    <select id="gen-mode" class="form-control" style="width:auto;font-size:13px">
+      <option value="auto">Auto (KB match)</option>
+      <option value="manual">Manual (pick service)</option>
+    </select>
+    <label style="font-size:13px;font-weight:500;margin-left:8px">Funnel Stage:</label>
+    <select id="funnel-stage" class="form-control" style="width:auto;font-size:13px">
+      <option value="">Auto-detect</option>
+      <option value="tof">TOF &ndash; Awareness</option>
+      <option value="mof">MOF &ndash; Consideration</option>
+      <option value="bof">BOF &ndash; Decision</option>
+    </select>
+  </div>
+  <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+    <button onclick="openSequenceModal()" class="btn btn-primary">&#10024; Generate Email Sequence</button>
+    <button onclick="openPreviewModal()" class="btn btn-secondary">&#128269; Preview Context</button>
+    <span style="font-size:13px;color:var(--muted)">Generate multiple touches in sequence automatically</span>
+  </div>
+</div>
+
+<!-- Prompt Preview Modal -->
+<div id="preview-modal" style="display:none;position:fixed;inset:0;z-index:2000;display:none">
+  <div style="position:absolute;inset:0;background:rgba(0,0,0,0.6)" onclick="document.getElementById('preview-modal').style.display='none'"></div>
+  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--card);border:1px solid var(--border);border-radius:12px;padding:28px;width:90%;max-width:900px;max-height:90vh;overflow-y:auto;z-index:1">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h3 style="margin:0;font-size:16px;font-weight:600">Prompt Preview</h3>
+      <button onclick="document.getElementById('preview-modal').style.display='none'" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted)">&times;</button>
+    </div>
+    <div id="preview-content" style="font-size:13px">Loading...</div>
+  </div>
 </div>
 
 <!-- Sequence Modal -->
@@ -484,7 +513,10 @@ async function generateEmail(touchNumber) {
   if (status) status.innerHTML = '<span style="color:var(--muted)">Calling AI provider...</span>';
   if (statusTop) { statusTop.style.display='block'; statusTop.style.background='rgba(99,102,241,0.08)'; statusTop.style.border='1px solid rgba(99,102,241,0.3)'; statusTop.style.color='var(--muted)'; statusTop.textContent='Calling AI provider...'; }
   try {
-    var r = await fetch('api/generate_email.php?company_id=' + companyId + '&touch_number=' + touchNumber);
+    var genMode = document.getElementById('gen-mode') ? document.getElementById('gen-mode').value : 'auto';
+    var funnelStage = document.getElementById('funnel-stage') ? document.getElementById('funnel-stage').value : '';
+    var genUrl = 'api/generate_email.php?company_id=' + companyId + '&touch_number=' + touchNumber + '&mode=' + encodeURIComponent(genMode) + (funnelStage ? '&funnel_stage=' + encodeURIComponent(funnelStage) : '');
+    var r = await fetch(genUrl);
     var text = await r.text();
     var d;
     try { d = JSON.parse(text); } catch(e) {
@@ -586,6 +618,59 @@ async function deleteEmail(draftId) {
   } catch(e) { alert('Network error: ' + e.message); }
 }
 
+// --- Prompt Preview ---
+async function openPreviewModal() {
+  var modal = document.getElementById('preview-modal');
+  modal.style.display = 'block';
+  document.getElementById('preview-content').textContent = 'Loading...';
+  var funnelStage = document.getElementById('funnel-stage') ? document.getElementById('funnel-stage').value : '';
+  var genMode = document.getElementById('gen-mode') ? document.getElementById('gen-mode').value : 'auto';
+  var url = 'api/preview_prompt.php?company_id=' + companyId + '&touch_number=1&mode=' + encodeURIComponent(genMode) + (funnelStage ? '&funnel_stage=' + encodeURIComponent(funnelStage) : '');
+  try {
+    var r = await fetch(url);
+    var d = await r.json();
+    if (!d.ok) {
+      document.getElementById('preview-content').innerHTML = '<span style="color:var(--danger)">Error: ' + (d.error || 'failed') + '</span>';
+      return;
+    }
+    var html = '';
+    // Stats row
+    html += '<div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:16px;padding:12px;background:var(--bg);border-radius:8px;font-size:12px">';
+    html += '<span><strong>System Prompt:</strong> ' + d.sys_chars + ' chars / ' + d.sys_words + ' words / ' + d.sys_tokens + ' tokens</span>';
+    html += '<span style="color:var(--muted)">|</span>';
+    html += '<span><strong>User Message:</strong> ' + d.user_chars + ' chars / ' + d.user_words + ' words / ' + d.user_tokens + ' tokens</span>';
+    html += '<span style="color:var(--muted)">|</span>';
+    html += '<span><strong>Total input:</strong> ' + d.total_in_tokens + ' tokens</span>';
+    html += '</div>';
+    // Matched service
+    if (d.matched_service) {
+      html += '<div style="margin-bottom:12px"><span class="badge badge-success">Matched: ' + d.matched_service + '</span></div>';
+    } else {
+      html += '<div style="margin-bottom:12px"><span class="badge">No service matched</span></div>';
+    }
+    // Cost table
+    html += '<table class="table" style="margin-bottom:16px;font-size:12px"><thead><tr><th>Provider</th><th>Est. Cost (per email)</th></tr></thead><tbody>';
+    for (var key in d.cost_estimates) {
+      var c = d.cost_estimates[key];
+      html += '<tr><td>' + c.label + '</td><td>$' + c.cost_usd.toFixed(6) + '</td></tr>';
+    }
+    html += '</tbody></table>';
+    // Collapsible prompts
+    html += '<details style="margin-bottom:12px"><summary style="cursor:pointer;font-weight:600;font-size:13px;padding:8px 0">System Prompt</summary>';
+    html += '<pre style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;font-size:11px;white-space:pre-wrap;word-break:break-word;max-height:300px;overflow-y:auto;margin-top:8px">' + escapeHtml(d.system_prompt) + '</pre></details>';
+    html += '<details style="margin-bottom:16px"><summary style="cursor:pointer;font-weight:600;font-size:13px;padding:8px 0">User Message</summary>';
+    html += '<pre style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;font-size:11px;white-space:pre-wrap;word-break:break-word;max-height:300px;overflow-y:auto;margin-top:8px">' + escapeHtml(d.user_message) + '</pre></details>';
+    // Send to AI button
+    html += '<button class="btn btn-primary" onclick="document.getElementById(\'preview-modal\').style.display=\'none\';generateEmail(<?= $nextTouch ?>)">Send to AI &rarr;</button>';
+    document.getElementById('preview-content').innerHTML = html;
+  } catch(e) {
+    document.getElementById('preview-content').innerHTML = '<span style="color:var(--danger)">Network error: ' + e.message + '</span>';
+  }
+}
+function escapeHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 // --- Sequence Generator ---
 function openSequenceModal() {
   document.getElementById('seqModal').style.display = 'block';
@@ -607,7 +692,10 @@ async function runSequence() {
     var touch = startTouch + i;
     document.getElementById('seqProgress').innerHTML = '<span style="color:var(--muted)">Generating touch ' + (i+1) + ' of ' + n + '...</span>';
     try {
-      var r = await fetch('api/generate_email.php?company_id=' + companyId + '&touch_number=' + touch);
+      var genMode = document.getElementById('gen-mode') ? document.getElementById('gen-mode').value : 'auto';
+      var funnelStage = document.getElementById('funnel-stage') ? document.getElementById('funnel-stage').value : '';
+      var seqUrl = 'api/generate_email.php?company_id=' + companyId + '&touch_number=' + touch + '&mode=' + encodeURIComponent(genMode) + (funnelStage ? '&funnel_stage=' + encodeURIComponent(funnelStage) : '');
+      var r = await fetch(seqUrl);
       var d = await r.json();
       if (!d.ok) {
         document.getElementById('seqProgress').innerHTML = '<span style="color:var(--danger)">Error on touch ' + touch + ': ' + (d.error || 'failed') + '</span>';

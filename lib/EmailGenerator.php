@@ -11,7 +11,7 @@ class EmailGenerator {
         return ($vCount['c'] > 0 && $sCount['c'] > 0) ? 'full' : 'lite';
     }
 
-    public static function generate($companyId, $touchNumber = 1, $senderId = 0) {
+    public static function generate($companyId, $touchNumber = 1, $senderId = 0, $options = []) {
         $company = DB::fetchOne('SELECT * FROM companies WHERE id = ?', array($companyId));
         if (!$company) return array('ok' => false, 'error' => 'Company not found');
 
@@ -82,7 +82,7 @@ class EmailGenerator {
         }
 
         // Full mode — existing KBMatcher + AIEmailDrafter flow
-        $service = KBMatcher::matchService($signalTypes, $techStack, $company['industry']);
+        $service = KBMatcher::matchService($signalTypes, $techStack, $company['industry'], (int)$tenantId);
 
         $persona = null;
         if ($service) {
@@ -148,6 +148,7 @@ class EmailGenerator {
         }
 
         // Insert email draft — with fallback if new columns don't exist yet
+        $funnelStage = $options['funnel_stage'] ?? '';
         $draftData = array(
             'company_id'         => $companyId,
             'subject'            => $email['subject'],
@@ -159,6 +160,8 @@ class EmailGenerator {
             'prompt_context'     => substr($email['prompt'], 0, 65535),
             'thread_id'          => $threadId,
             'generation_mode'    => 'full',
+            'funnel_stage'       => $funnelStage ?: null,
+            'sequence_mode'      => ($options['mode'] ?? 'auto') === 'manual' ? 'manual' : 'auto',
         );
         try {
             DB::insert('email_drafts', $draftData);
@@ -166,6 +169,8 @@ class EmailGenerator {
             // Fallback: insert without new columns in case migrations haven't run yet
             unset($draftData['thread_id']);
             unset($draftData['generation_mode']);
+            unset($draftData['funnel_stage']);
+            unset($draftData['sequence_mode']);
             DB::insert('email_drafts', $draftData);
         }
 

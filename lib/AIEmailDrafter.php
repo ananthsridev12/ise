@@ -280,6 +280,14 @@ class AIEmailDrafter {
         return array('ok' => false, 'error' => 'Unknown provider: ' . $provider);
     }
 
+    public static function buildSystemPromptPublic($company, $scoreData, $techStack, $service, $sender, $tone, $aiSettings, $touchNumber, $priorSubject, $persona, $thread, $assets) {
+        return self::buildSystemPrompt($service, $sender, $tone, $aiSettings);
+    }
+
+    public static function buildUserMessagePublic($company, $scoreData, $techStack, $service, $sender, $tone, $aiSettings, $touchNumber, $priorSubject, $persona, $thread, $assets) {
+        return self::buildUserMessage($company, $scoreData, $techStack, $touchNumber, $priorSubject, $persona, $aiSettings, $assets);
+    }
+
     private static function buildSystemPrompt($service, $sender, $tone, $aiSettings) {
         $kbCompany   = DB::fetchOne('SELECT * FROM kb_company LIMIT 1') ?: array();
         $companyName = $kbCompany['name'] ?? 'SolidPro';

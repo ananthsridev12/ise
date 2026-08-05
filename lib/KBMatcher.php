@@ -1,8 +1,9 @@
 <?php
 class KBMatcher {
-    public static function matchService($signalTypes, $techStack, $industry) {
+    public static function matchService($signalTypes, $techStack, $industry, $tenantId = 0) {
         $services = DB::fetchAll(
-            'SELECT s.*, v.name as vertical_name FROM kb_services s LEFT JOIN kb_verticals v ON s.vertical_id = v.id'
+            'SELECT s.*, v.name as vertical_name FROM kb_services s LEFT JOIN kb_verticals v ON s.vertical_id = v.id WHERE s.tenant_id = ?',
+            [$tenantId]
         );
         if (!$services) return null;
 
@@ -35,12 +36,12 @@ class KBMatcher {
         return ($bestScore >= 2) ? $best : null;
     }
 
-    public static function matchICPs($service, $company, $limit = 5): array {
+    public static function matchICPs($service, $company, $limit = 5, $tenantId = 0): array {
         if (!$service) return array();
 
         $icps = DB::fetchAll(
-            'SELECT * FROM kb_icps WHERE service_id = ? OR vertical_id = ?',
-            array($service['id'], $service['vertical_id'] ?? 0)
+            'SELECT * FROM kb_icps WHERE (service_id = ? OR vertical_id = ?) AND tenant_id = ?',
+            array($service['id'], $service['vertical_id'] ?? 0, $tenantId)
         );
         if (!$icps) return array();
 
